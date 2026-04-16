@@ -36,4 +36,7 @@ jobs:
       tier_dir: tier-04-cdktf-applications
       stack: devnet
       apply: ${{ inputs.apply == null && true || inputs.apply }}
-      extra_vars: ${{ format('-var image_tag={0}', inputs.image_tag != null && inputs.image_tag || github.event.client_payload.image_tag) }}
+      # cdktf-cli 0.21 expects '--var=key=value' (two dashes + '='). Using
+      # the terraform-style '-var key=value' is silently dropped, which kept
+      # the Helm release stuck on image_tag=latest no matter what we passed.
+      extra_vars: ${{ format('--var=image_tag={0}', inputs.image_tag != null && inputs.image_tag || github.event.client_payload.image_tag) }}
