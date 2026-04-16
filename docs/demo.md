@@ -113,7 +113,7 @@ copying path '/nix/store/...' from 'https://radupopa2010.cachix.org'
 
 ### Beat 6 — CI deploys (2–3 min)
 
-`tier-04-applications` calls the reusable `_shared-cdktf-tier.yml`. `cdktf deploy devnet --var=image_tag=v0.1.X`. Helm release rolls out, AWS LBC updates target groups.
+`infra-tier-04-applications` calls the reusable `_infra-shared-cdktf-tier.yml`. `cdktf deploy devnet --var=image_tag=v0.1.X`. Helm release rolls out, AWS LBC updates target groups.
 
 ### Beat 7 — CI auto-validates with `smoke-test`
 
@@ -171,8 +171,8 @@ Or save money by tearing devnet down for the night:
 ./scripts/dev-build-multi.sh
 
 # Operations
-gh workflow run tier-XX-...yml
-gh workflow run deploy-all.yml -f confirm=devnet
+gh workflow run infra-tier-XX-...yml
+gh workflow run infra-deploy-all.yml -f confirm=devnet
 gh release create v0.1.X --generate-notes
 ./scripts/destroy-all.sh
 ```
@@ -184,5 +184,5 @@ gh release create v0.1.X --generate-notes
 | `dev-up.sh` says "version mismatch" | Forgot `cargo update` after bumping `Cargo.toml` | `(cd app && cargo update --offline -p rust-demo)` |
 | `gh release create` fires no workflow | Tag already existed, GH ignored the duplicate trigger | Delete release + re-create: `gh release delete vX.Y.Z --yes && gh release create vX.Y.Z --generate-notes` |
 | Smoke-test times out polling ALB | Two `app-release` runs raced for the state lock | Check `gh run list --status in_progress` — should be one. If two, kill the duplicate (concurrency should prevent this) |
-| `/version` returns the old version after CI green | cdktf var flag wrong (`-var` vs `--var=`) | Already fixed in `tier-04-applications.yml`; if it recurs, check the `extra_vars:` line |
+| `/version` returns the old version after CI green | cdktf var flag wrong (`-var` vs `--var=`) | Already fixed in `infra-tier-04-applications.yml`; if it recurs, check the `extra_vars:` line |
 | ALB DNS doesn't resolve | New release is mid-rollout, old ALB DNS may not be updated yet | Re-derive: `aws elbv2 describe-load-balancers ... --query '...DNSName'` |

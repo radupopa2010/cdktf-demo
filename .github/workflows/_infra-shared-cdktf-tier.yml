@@ -6,11 +6,11 @@ name: _shared-cdktf-tier
 #
 # Purpose
 #   The single source of truth for "how do we deploy a CDKTF tier?". Each
-#   per-tier workflow (tier-01-environments.yml, tier-02-clusters.yml,
-#   tier-03-internal-tools.yml, tier-04-applications.yml) is a thin wrapper
+#   per-tier workflow (infra-tier-01-environments.yml, infra-tier-02-clusters.yml,
+#   infra-tier-03-internal-tools.yml, infra-tier-04-applications.yml) is a thin wrapper
 #   that defines its own triggers (push/path filters, workflow_dispatch,
 #   workflow_call) and then delegates to this workflow with `uses:`. The
-#   orchestrator (deploy-all.yml) and the release pipeline (app-release.yml)
+#   orchestrator (infra-deploy-all.yml) and the release pipeline (app-release.yml)
 #   chain the per-tier workflows together. Bumping the Terraform version,
 #   swapping the OIDC role, changing the state-backend naming, or adding a
 #   step like `cdktf destroy` is therefore a one-file edit.
@@ -32,7 +32,7 @@ name: _shared-cdktf-tier
 #
 # Auth model — there are no GitHub Actions secrets in this repo
 #   - id-token: write enables OIDC.
-#   - aws-actions/configure-aws-credentials@v4 + vars.AWS_ROLE_ARN does the
+#   - aws-actions/configure-aws-credentials@v5 + vars.AWS_ROLE_ARN does the
 #     STS exchange. From that point on the runner has short-lived AWS creds
 #     in env (AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY/_SESSION_TOKEN).
 #   - Anything that genuinely needs a secret value (e.g. Cachix push token
@@ -56,11 +56,11 @@ name: _shared-cdktf-tier
 #
 # How callers use it
 #
-#   # tier-02-clusters.yml
+#   # infra-tier-02-clusters.yml
 #   on: { workflow_dispatch:, push: { paths: ["tier-02-cdktf-clusters/**"] } }
 #   jobs:
 #     deploy:
-#       uses: ./.github/workflows/_shared-cdktf-tier.yml
+#       uses: ./.github/workflows/_infra-shared-cdktf-tier.yml
 #       with:
 #         tier_dir: tier-02-cdktf-clusters
 #         stack: devnet
@@ -96,12 +96,6 @@ permissions:
   id-token: write
   contents: read
 
-# Silence the "Node.js 20 actions are deprecated" warning by pinning runners
-# to Node 24 for the JavaScript-based actions used here. Same env applies to
-# every reusable invocation.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   plan-and-apply:
     runs-on: ubuntu-latest
@@ -121,9 +115,9 @@ jobs:
       run:
         working-directory: ${{ inputs.tier_dir }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
 
@@ -137,7 +131,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -175,7 +169,7 @@ jobs:
 
       - name: Upload plan logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cdktf-${{ inputs.tier_dir }}-${{ github.run_id }}
           path: ${{ inputs.tier_dir }}/logs/
@@ -190,7 +184,7 @@ jobs:
 
       - name: Upload deploy logs
         if: ${{ inputs.apply && always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cdktf-${{ inputs.tier_dir }}-deploy-${{ github.run_id }}
           path: ${{ inputs.tier_dir }}/logs/

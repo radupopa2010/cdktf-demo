@@ -14,20 +14,20 @@ gh repo set-default     # pick this repo
 
 | File | Trigger | Inputs | What it does |
 |---|---|---|---|
-| `tier-01-environments.yml` | `workflow_dispatch`, push to `main` under `tier-01-cdktf-environments/**` | — | `cdktf plan` + (on apply job) `cdktf deploy devnet` |
-| `tier-02-clusters.yml` | same, scoped to tier-02 paths | — | EKS + ECR + secret skeletons |
-| `tier-03-internal-tools.yml` | same, scoped to tier-03 paths | — | LBC + cert-manager |
-| `tier-04-applications.yml` | `workflow_dispatch`, `repository_dispatch` (`image-released`) | `image_tag` (string) | Helm release of the app |
-| `deploy-all.yml` | `workflow_dispatch` only | `confirm` (must equal `devnet`) | Calls tiers 01 → 04 sequentially via `workflow_call` |
+| `infra-tier-01-environments.yml` | `workflow_dispatch`, push to `main` under `tier-01-cdktf-environments/**` | — | `cdktf plan` + (on apply job) `cdktf deploy devnet` |
+| `infra-tier-02-clusters.yml` | same, scoped to tier-02 paths | — | EKS + ECR + secret skeletons |
+| `infra-tier-03-internal-tools.yml` | same, scoped to tier-03 paths | — | LBC + cert-manager |
+| `infra-tier-04-applications.yml` | `workflow_dispatch`, `repository_dispatch` (`image-released`) | `image_tag` (string) | Helm release of the app |
+| `infra-deploy-all.yml` | `workflow_dispatch` only | `confirm` (must equal `devnet`) | Calls tiers 01 → 04 sequentially via `workflow_call` |
 | `app-build.yml` | `workflow_call` (reusable) | `image_tag` | Nix build → push to ECR → output digest |
-| `app-release.yml` | `release: published`, `push: tags v*` | — | Calls `app-build`, then dispatches `tier-04-applications` |
+| `app-release.yml` | `release: published`, `push: tags v*` | — | Calls `app-build`, then dispatches `infra-tier-04-applications` |
 
 ## Common operations
 
 ### Trigger one tier
 
 ```bash
-gh workflow run tier-02-clusters.yml --ref main
+gh workflow run infra-tier-02-clusters.yml --ref main
 gh run watch                               # interactive
 gh run view --log                          # latest run, full logs
 ```
@@ -35,14 +35,14 @@ gh run view --log                          # latest run, full logs
 ### Trigger the orchestrator
 
 ```bash
-gh workflow run deploy-all.yml --ref main -f confirm=devnet
+gh workflow run infra-deploy-all.yml --ref main -f confirm=devnet
 gh run watch
 ```
 
 ### Trigger an app deploy with a specific tag
 
 ```bash
-gh workflow run tier-04-applications.yml --ref main -f image_tag=v0.1.0
+gh workflow run infra-tier-04-applications.yml --ref main -f image_tag=v0.1.0
 ```
 
 ### Cut a release (the canonical way to deploy a new app version)

@@ -24,9 +24,6 @@ concurrency:
   group: app-release
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   resolve-tag:
     runs-on: ubuntu-latest
@@ -50,7 +47,7 @@ jobs:
 
   deploy:
     needs: [resolve-tag, build]
-    uses: ./.github/workflows/tier-04-applications.yml
+    uses: ./.github/workflows/infra-tier-04-applications.yml
     with:
       image_tag: ${{ needs.resolve-tag.outputs.image_tag }}
       apply: true
@@ -62,10 +59,10 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}

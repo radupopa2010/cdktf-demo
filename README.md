@@ -2,8 +2,6 @@
 
 A small but realistic demo of the multi-tier CDKTF pattern I used in the past, scaled down to one environment (`devnet`), one AWS region (`eu-central-1`), and one tiny Rust app on EKS. Built with Nix + Cachix for reproducible local & CI builds, deployed via GitHub Actions using OIDC + AWS Secrets Manager (no GitHub-stored secrets).
 
-> **Demo runbook:** see [`docs/demo.md`](./docs/demo.md) for the tonight-vs-tomorrow walkthrough. This README is the reference; the runbook is the script.
-
 ---
 
 <details>
@@ -32,17 +30,17 @@ The Actions sidebar lists workflows alphabetically (`app-build`, `app-release`, 
 
 ```text
 ┌─ REUSABLE — only invoked via workflow_call, never directly
-│   _shared-cdktf-tier.yml         plan + apply for one cdktf tier
+│   _infra-shared-cdktf-tier.yml         plan + apply for one cdktf tier
 │   app-build.yml                  nix build + cachix push + ECR push
 │
-├─ PER-TIER — each is a thin wrapper around _shared-cdktf-tier.yml
-│   tier-01-environments.yml       VPC tier
-│   tier-02-clusters.yml           EKS + ECR + Secrets Manager
-│   tier-03-internal-tools.yml     LBC + cert-manager
-│   tier-04-applications.yml       Helm release of rust-demo
+├─ PER-TIER — each is a thin wrapper around _infra-shared-cdktf-tier.yml
+│   infra-tier-01-environments.yml       VPC tier
+│   infra-tier-02-clusters.yml           EKS + ECR + Secrets Manager
+│   infra-tier-03-internal-tools.yml     LBC + cert-manager
+│   infra-tier-04-applications.yml       Helm release of rust-demo
 │
 └─ TOP-LEVEL ORCHESTRATORS — what humans actually trigger
-    deploy-all.yml                 manual, full infra provision
+    infra-deploy-all.yml                 manual, full infra provision
     app-release.yml                release-driven, app-only redeploy
 ```
 
@@ -51,22 +49,22 @@ Two distinct flows in practice:
 ### Flow A — Infrastructure deploy (rare)
 
 ```text
-gh workflow run deploy-all.yml -f confirm=devnet
+gh workflow run infra-deploy-all.yml -f confirm=devnet
        │
        ▼
-deploy-all.yml
-  ├─► tier-01-environments.yml ──uses──► _shared-cdktf-tier.yml  (~3 min, VPC)
+infra-deploy-all.yml
+  ├─► infra-tier-01-environments.yml ──uses──► _infra-shared-cdktf-tier.yml  (~3 min, VPC)
   │       │ needs:
-  ├─► tier-02-clusters.yml      ──uses──► _shared-cdktf-tier.yml  (~20 min, EKS)
+  ├─► infra-tier-02-clusters.yml      ──uses──► _infra-shared-cdktf-tier.yml  (~20 min, EKS)
   │       │ needs:
-  ├─► tier-03-internal-tools.yml──uses──► _shared-cdktf-tier.yml  (~3 min, LBC)
+  ├─► infra-tier-03-internal-tools.yml──uses──► _infra-shared-cdktf-tier.yml  (~3 min, LBC)
   │       │ needs:
-  └─► tier-04-applications.yml  ──uses──► _shared-cdktf-tier.yml  (~3 min, Helm)
+  └─► infra-tier-04-applications.yml  ──uses──► _infra-shared-cdktf-tier.yml  (~3 min, Helm)
 ```
 
 `deploy-all` chains them with `needs:` so they run **strictly sequentially** — each tier reads remote state from lower tiers, so order matters. Total wall time: ~30 min from cold.
 
-You can also run any tier individually (`gh workflow run tier-XX-...yml`) or push code matching a tier's `paths:` filter — but you're responsible for ordering.
+You can also run any tier individually (`gh workflow run infra-tier-XX-...yml`) or push code matching a tier's `paths:` filter — but you're responsible for ordering.
 
 ### Flow B — App release (normal cadence)
 
@@ -82,7 +80,7 @@ app-release.yml
   │       │              ├─ nix build .#rust-demo-image (Cachix-backed)
   │       │              └─ docker tag + push to ECR (vX.Y.Z + latest)
   │       │ needs:
-  ├─► deploy ──uses──► tier-04-applications.yml ──uses──► _shared-cdktf-tier.yml
+  ├─► deploy ──uses──► infra-tier-04-applications.yml ──uses──► _infra-shared-cdktf-tier.yml
   │       │              └─ cdktf deploy devnet --var=image_tag=vX.Y.Z
   │       │                 (Helm release rolls; LBC updates targets)
   │       │ needs:
@@ -93,14 +91,14 @@ Total wall time: ~5–8 min on a warm Cachix cache. Tiers 01/02/03 are not touch
 
 ### What auto-fires from a `git push`?
 
-Per-tier workflows have `push: branches: [main], paths: [<tier-dir>/**]` so changing infra code redeploys *only* that tier. Changing `app/`-only files triggers nothing — those go through the release flow. `deploy-all.yml` and `app-release.yml` never auto-fire from push.
+Per-tier workflows have `push: branches: [main], paths: [<tier-dir>/**]` so changing infra code redeploys *only* that tier. Changing `app/`-only files triggers nothing — those go through the release flow. `infra-deploy-all.yml` and `app-release.yml` never auto-fire from push.
 
 ### Mental model
 
-- **`_shared-cdktf-tier.yml`** is the engine. It knows how to run `cdktf` safely (auth via OIDC, install Terraform, derive the state-backend names, hold the per-env concurrency lock, log to artifacts).
+- **`_infra-shared-cdktf-tier.yml`** is the engine. It knows how to run `cdktf` safely (auth via OIDC, install Terraform, derive the state-backend names, hold the per-env concurrency lock, log to artifacts).
 - The **four `tier-XX-...yml`** files are 30-line wrappers that say *"my code is here, please plan+apply stack `devnet`."* They exist so each tier can have its own triggers + path filter.
 - **`app-build.yml`** is the sibling engine for the Nix → ECR side of the world.
-- **`deploy-all.yml`** is the manual *"spin up everything"* button.
+- **`infra-deploy-all.yml`** is the manual *"spin up everything"* button.
 - **`app-release.yml`** is the automated *"ship a new app version"* pipe.
 
 ### One subtle gotcha — `release.published` reads its workflow YAML from the *tag's* commit
@@ -273,14 +271,14 @@ The remaining setup (deploy each tier in order, put the Cachix token in AWS Secr
 ### Trigger a full deploy from CI
 
 ```bash
-gh workflow run deploy-all.yml -f confirm=devnet
+gh workflow run infra-deploy-all.yml -f confirm=devnet
 gh run watch
 ```
 
 ### Trigger one tier
 
 ```bash
-gh workflow run tier-02-clusters.yml
+gh workflow run infra-tier-02-clusters.yml
 ```
 
 ### Cut a release of the app
