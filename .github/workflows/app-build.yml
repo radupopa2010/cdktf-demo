@@ -1,0 +1,91 @@
+name: app-build
+
+# Reusable: builds the rust-demo image with Nix (Cachix-cached) and pushes
+# it to ECR with the given tag (and `latest`).
+#
+# Auth:
+#   - AWS via OIDC (vars.AWS_ROLE_ARN)
+#   - Cachix push token loaded from AWS Secrets Manager AFTER OIDC step
+#     (NOT from a GitHub secret).
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "Tag to push (e.g. v0.1.0)"
+        required: true
+        type: string
+      ecr_repo_name:
+        description: "ECR repository name (without registry prefix)"
+        required: false
+        type: string
+        default: "cdktf-demo/rust-demo"
+    outputs:
+      image:
+        description: "Full pushed image reference"
+        value: ${{ jobs.build.outputs.image }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Load Cachix auth token from AWS Secrets Manager
+        run: |
+          TOKEN=$(aws secretsmanager get-secret-value \
+            --secret-id cdktf-demo/devnet/cachix-radupopa2010-token \
+            --query SecretString --output text)
+          # Mask the value in logs.
+          echo "::add-mask::$TOKEN"
+          echo "CACHIX_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Configure Cachix (push enabled)
+        uses: cachix/cachix-action@v15
+        with:
+          name: ${{ vars.CACHIX_CACHE_NAME }}
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+          # `push` is on by default; leave it.
+
+      - name: Build OCI image with Nix
+        run: |
+          nix build .#rust-demo-image --print-build-logs
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and push image
+        id: push
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          REPO: ${{ inputs.ecr_repo_name }}
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          docker load < result
+          # Nix's dockerTools tags it as rust-demo:latest. Re-tag for ECR.
+          docker tag rust-demo:latest "${REGISTRY}/${REPO}:${TAG}"
+          docker tag rust-demo:latest "${REGISTRY}/${REPO}:latest"
+          docker push "${REGISTRY}/${REPO}:${TAG}"
+          docker push "${REGISTRY}/${REPO}:latest"
+          echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"

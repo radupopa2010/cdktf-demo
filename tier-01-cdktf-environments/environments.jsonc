@@ -1,0 +1,67 @@
+// cdktf-demo environments configuration.
+//
+// Mirrors the Movement Labs `cdktf-environments/environments.jsonc` shape so
+// the multi-tier pattern is recognisable. For this demo, only `devnet` is
+// active; every other section is preserved (commented) to show how onboarding
+// a new environment would look without rewriting the file.
+{
+    // ── ACTIVE ──────────────────────────────────────────────────────────────
+    "devnet": {
+        "regions": [
+            "eu-central-1"
+        ],
+        "networking": {
+            "cidr_prefix": "10.251",
+            "mask_length_environment": 16,
+            "mask_length_vpc": 20,
+            "mask_length_subnet": 24
+        }
+    }
+
+    // ── COMMENTED FOR FUTURE USE ────────────────────────────────────────────
+    // (Mirrors the Movement Labs layout. Uncomment + add a stack class in
+    //  src/infra/main.ts to onboard a new environment.)
+
+    // "root": {
+    //     "regions": [
+    //         "us-east-1",
+    //         "us-west-2",
+    //         "eu-central-1"
+    //     ],
+    //     "networking": {
+    //         "cidr_prefix": "10.255",
+    //         "mask_length_environment": 16,
+    //         "mask_length_vpc": 20,
+    //         "mask_length_subnet": 22,
+    //         "hvn_cidr_prefix": "10.200",
+    //         "hvn_mask_length": 20
+    //     }
+    // },
+    // "tools": {
+    //     "regions": [ "eu-central-1" ],
+    //     "networking": {
+    //         "cidr_prefix": "10.254",
+    //         "mask_length_environment": 16,
+    //         "mask_length_vpc": 20,
+    //         "mask_length_subnet": 22
+    //     }
+    // },
+    // "mainnet": {
+    //     "regions": [ "eu-central-1", "us-west-2" ],
+    //     "networking": {
+    //         "cidr_prefix": "10.253",
+    //         "mask_length_environment": 16,
+    //         "mask_length_vpc": 20,
+    //         "mask_length_subnet": 22
+    //     }
+    // },
+    // "testnet": {
+    //     "regions": [ "eu-central-1" ],
+    //     "networking": {
+    //         "cidr_prefix": "10.252",
+    //         "mask_length_environment": 16,
+    //         "mask_length_vpc": 20,
+    //         "mask_length_subnet": 22
+    //     }
+    // }
+}

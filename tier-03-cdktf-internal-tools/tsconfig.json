@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "experimentalDecorators": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@providers/*": ["./out/gen/providers/*"],
+      "@modules/*": ["./out/gen/modules/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "out/gen/**/*.ts"],
+  "exclude": ["node_modules", "dist", "out/infra"]
+}

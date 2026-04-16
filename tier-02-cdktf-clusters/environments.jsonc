@@ -1,0 +1,31 @@
+// Per-environment cluster sizing for cdktf-demo.
+// Only `devnet` is active; mirror the multi-env shape by uncommenting.
+{
+    "devnet": {
+        "cluster": {
+            "version": "1.30",
+            "endpoint_public_access": true,
+            "endpoint_public_access_cidrs": ["0.0.0.0/0"]
+        },
+        "nodegroups": {
+            "app": {
+                "instance_types": ["t3.small"],
+                "min_size": 1,
+                "max_size": 2,
+                "desired_size": 1,
+                "disk_size_gb": 20,
+                "labels": { "workload": "rust-demo" },
+                "taints": [
+                    { "key": "workload", "value": "rust-demo", "effect": "NO_SCHEDULE" }
+                ]
+            }
+        },
+        "ecr": {
+            "repository_name": "cdktf-demo/rust-demo",
+            "image_retention_count": 10
+        }
+    }
+
+    // "testnet": { ... },
+    // "mainnet": { ... }
+}

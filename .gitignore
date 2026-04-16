@@ -1,0 +1,51 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# CDKTF / Terraform
+out/
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+.cdktf.staging/
+
+# CDKTF generated providers / modules
+**/.gen/
+**/cdktf.out/
+**/out/gen/
+**/out/stacks/
+
+# Logs (cdktf skill writes here)
+logs/
+**/logs/
+
+# Rust
+app/target/
+target/
+
+# Nix
+result
+result-*
+
+# direnv
+.direnv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local env / secrets safety net (we never commit any of these)
+.env
+.env.*
+*.pem
+*.key
+secrets.json

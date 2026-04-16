@@ -1,0 +1,30 @@
+I want to create a demo project on how I used cdktf at Movement Labs in the past 2 years.
+
+Look at /Users/radupopa/p/move/infrastructure-workspace, understand the multi tier architecture and then create a demo infrastructure where we will deploy only to devnet only. Use the environments repo to create the vpc, do not create new aws separate accounts, use aws profile radupopa.
+Then create the eks cluster with dedicated node pool for the app.
+The app should not be movement network, which is heavy. It should be a rust app that, I
+can easily use for demo. It should have an endpoint I could hit and would return the 
+semantic version. The infra should be provided with the lowest resources as possible.
+The infrastructure and the app should be deployed using github actions workflows.
+There should be workflows for each infra tier and one that triggers everything to get deploed. The application deployment workflow should be triggered when a new release and 
+tag are created. The pipelines should use nix with flakes to build the app. I want
+to demo also how one would be able to use Cachix for caching. How when one builds locally,
+then the CI would reuse the remote cachix cache and when the ci builds, one could just
+run the app locally. For local development one would use a docker compose for developers
+not familiar with kubernetes, but also minikube for the infra team.
+In the infrastructure-workspace you will find config files like /Users/radupopa/p/move/infrastructure-workspace/repos/cdktf-environments/environments.jsonc
+for each tier. Name the equivalent of /Users/radupopa/p/move/infrastructure-workspace/repos/cdktf-environments to tier-01-cdktf-environments and use the same pattern for the
+other tiers. the config section not relevant for our demo, should be commented out,
+not completely removed.
+look at proposed design in /Users/radupopa/p/radu/random-code/001-ai-infra and create 
+skills for the agents, for each tier and for triggering correctly the github actions workflows.
+Use terraform modules that are called from cdktf files.
+
+Ask me clarifying questions if needed. Create first the plan file and save it in 
+/Users/radupopa/p/radu/random-code/cdktf-demo. Create a detailed tasks file and update it 
+in a timely manner so I can follow along while you work. 
+Create cdktf skill and make sure to save the outputs to a file so I can see when needed.
+
+also secrets should be created in aws secrets manager, use the aws cli with null provider to   
+create secrets and then refference those in terraform. No secrets in github for github          
+actions. Maybe just tell me how to configure github to have access to trigger workflows

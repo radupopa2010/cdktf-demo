@@ -1,0 +1,14 @@
+// Per-environment app config.
+{
+    "devnet": {
+        "app": {
+            "namespace": "rust-demo",
+            "release_name": "rust-demo",
+            "replicas": 1,
+            "image_tag": "latest"
+        }
+    }
+
+    // "testnet": { ... },
+    // "mainnet": { ... }
+}

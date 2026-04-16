@@ -1,0 +1,47 @@
+replicaCount: 1
+
+image:
+  repository: ""        # set by tier-04 from tier-02 ECR output
+  tag: latest           # overridden per release
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+  host: ""              # leave empty → ALB serves on its own DNS
+  path: /
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# Pin to the dedicated app node group from tier-02
+nodeSelector:
+  workload: rust-demo
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: rust-demo
+    effect: NoSchedule
+
+podAnnotations: {}
+
+env:
+  - name: RUST_LOG
+    value: info

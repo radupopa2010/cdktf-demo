@@ -1,0 +1,18 @@
+// Per-environment internal-tools config.
+{
+    "devnet": {
+        "lbc": {
+            "chart_version": "1.8.1",
+            "namespace": "kube-system",
+            "service_account": "aws-load-balancer-controller"
+        },
+        "cert_manager": {
+            "enabled": false,
+            "chart_version": "v1.15.0",
+            "namespace": "cert-manager"
+        }
+    }
+
+    // "testnet": { ... },
+    // "mainnet": { ... }
+}

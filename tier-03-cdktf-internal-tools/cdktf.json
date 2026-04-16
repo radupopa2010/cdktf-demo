@@ -1,0 +1,29 @@
+{
+  "language": "typescript",
+  "app": "npx ts-node -P tsconfig.infra.json -r ./src/infra/tools/register-paths.js src/infra/main.ts",
+  "projectId": "cdktf-demo-tier-03-internal-tools",
+  "sendCrashReports": "false",
+  "terraformProviders": [
+    "hashicorp/aws@=5.100.0",
+    "hashicorp/kubernetes@=2.32.0",
+    "hashicorp/helm@=2.15.0"
+  ],
+  "terraformModules": [
+    {
+      "name": "kubernetes-aws-load-balancer-controller",
+      "source": "./modules/kubernetes-aws-load-balancer-controller"
+    },
+    {
+      "name": "kubernetes-cert-manager",
+      "source": "./modules/kubernetes-cert-manager"
+    }
+  ],
+  "context": {
+    "cdktfRelativeModules": [
+      "./modules/kubernetes-aws-load-balancer-controller",
+      "./modules/kubernetes-cert-manager"
+    ]
+  },
+  "output": "out/infra",
+  "codeMakerOutput": "out/gen"
+}

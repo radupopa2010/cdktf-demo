@@ -1,0 +1,19 @@
+{
+  "language": "typescript",
+  "app": "npx ts-node -P tsconfig.infra.json -r ./src/infra/tools/register-paths.js src/infra/main.ts",
+  "projectId": "cdktf-demo-tier-01-environments",
+  "sendCrashReports": "false",
+  "terraformProviders": [
+    "hashicorp/aws@=5.100.0"
+  ],
+  "terraformModules": [
+    "terraform-aws-modules/vpc/aws@5.21.0",
+    {
+      "name": "aws-network",
+      "source": "./modules/aws-network"
+    }
+  ],
+  "context": {},
+  "output": "out/infra",
+  "codeMakerOutput": "out/gen"
+}

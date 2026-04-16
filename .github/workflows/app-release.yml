@@ -1,0 +1,45 @@
+name: app-release
+
+# Triggered when:
+#   - A GitHub release is published, OR
+#   - A `v*` git tag is pushed (release-from-tag flow).
+#
+# Builds the image with the tag, then deploys tier-04 with the new tag.
+
+on:
+  release:
+    types: [published]
+  push:
+    tags: ["v*"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  resolve-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.t.outputs.image_tag }}
+    steps:
+      - id: t
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve-tag
+    uses: ./.github/workflows/app-build.yml
+    with:
+      image_tag: ${{ needs.resolve-tag.outputs.image_tag }}
+
+  deploy:
+    needs: [resolve-tag, build]
+    uses: ./.github/workflows/tier-04-applications.yml
+    with:
+      image_tag: ${{ needs.resolve-tag.outputs.image_tag }}
+      apply: true

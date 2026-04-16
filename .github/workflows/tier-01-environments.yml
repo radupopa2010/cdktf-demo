@@ -1,0 +1,34 @@
+name: tier-01-environments
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply after plan"
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    paths:
+      - "tier-01-cdktf-environments/**"
+      - ".github/workflows/tier-01-environments.yml"
+      - ".github/workflows/_shared-cdktf-tier.yml"
+  workflow_call:
+    inputs:
+      apply:
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_shared-cdktf-tier.yml
+    with:
+      tier_dir: tier-01-cdktf-environments
+      stack: devnet
+      apply: ${{ inputs.apply == null && true || inputs.apply }}

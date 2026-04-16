@@ -1,0 +1,5 @@
+{
+  "_comment": "PLACEHOLDER. Refresh by running scripts/refresh-lbc-policy.sh — fetches the canonical AWS Load Balancer Controller IAM policy from https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json and overwrites this file. The empty Statement here lets `terraform validate` succeed; do NOT deploy without refreshing first.",
+  "Version": "2012-10-17",
+  "Statement": []
+}

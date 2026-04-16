@@ -1,0 +1,24 @@
+{
+  "language": "typescript",
+  "app": "npx ts-node -P tsconfig.infra.json -r ./src/infra/tools/register-paths.js src/infra/main.ts",
+  "projectId": "cdktf-demo-tier-04-applications",
+  "sendCrashReports": "false",
+  "terraformProviders": [
+    "hashicorp/aws@=5.100.0",
+    "hashicorp/kubernetes@=2.32.0",
+    "hashicorp/helm@=2.15.0"
+  ],
+  "terraformModules": [
+    {
+      "name": "kubernetes-rust-demo",
+      "source": "./modules/kubernetes-rust-demo"
+    }
+  ],
+  "context": {
+    "cdktfRelativeModules": [
+      "./modules/kubernetes-rust-demo"
+    ]
+  },
+  "output": "out/infra",
+  "codeMakerOutput": "out/gen"
+}

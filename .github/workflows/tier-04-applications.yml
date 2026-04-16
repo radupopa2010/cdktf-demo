@@ -1,0 +1,39 @@
+name: tier-04-applications
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Container image tag to deploy"
+        required: false
+        type: string
+        default: "latest"
+      apply:
+        required: false
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      image_tag:
+        required: false
+        type: string
+        default: "latest"
+      apply:
+        required: false
+        type: boolean
+        default: true
+  repository_dispatch:
+    types: [image-released]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_shared-cdktf-tier.yml
+    with:
+      tier_dir: tier-04-cdktf-applications
+      stack: devnet
+      apply: ${{ inputs.apply == null && true || inputs.apply }}
+      extra_vars: ${{ format('-var image_tag={0}', inputs.image_tag != null && inputs.image_tag || github.event.client_payload.image_tag) }}

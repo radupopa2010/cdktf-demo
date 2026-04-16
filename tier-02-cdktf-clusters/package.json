@@ -1,0 +1,28 @@
+{
+  "name": "tier-02-cdktf-clusters",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/infra/main.js",
+  "types": "src/infra/main.ts",
+  "license": "MIT",
+  "scripts": {
+    "get": "cdktf get",
+    "build": "tsc",
+    "synth": "cdktf synth",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint 'src/**/*.ts'"
+  },
+  "engines": { "node": ">=20.0" },
+  "dependencies": {
+    "cdktf": "^0.21.0",
+    "constructs": "^10.3.0",
+    "jsonc-parser": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.1.0",
+    "cdktf-cli": "^0.21.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.5.4"
+  }
+}

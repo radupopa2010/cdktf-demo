@@ -1,0 +1,57 @@
+name: deploy-all
+
+# End-to-end orchestrator. Calls each tier in dependency order.
+# Manually triggered only — never on push, to avoid accidental full re-deploys.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "devnet" to confirm a full devnet deploy'
+        required: true
+        type: string
+      image_tag:
+        description: "App image tag for tier-04"
+        required: false
+        type: string
+        default: "latest"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm input
+        run: |
+          if [ "${{ inputs.confirm }}" != "devnet" ]; then
+            echo "::error::You must type 'devnet' to confirm. Got: '${{ inputs.confirm }}'"
+            exit 1
+          fi
+
+  tier-01:
+    needs: guard
+    uses: ./.github/workflows/tier-01-environments.yml
+    with:
+      apply: true
+
+  tier-02:
+    needs: tier-01
+    uses: ./.github/workflows/tier-02-clusters.yml
+    with:
+      apply: true
+
+  tier-03:
+    needs: tier-02
+    uses: ./.github/workflows/tier-03-internal-tools.yml
+    with:
+      apply: true
+
+  tier-04:
+    needs: tier-03
+    uses: ./.github/workflows/tier-04-applications.yml
+    with:
+      apply: true
+      image_tag: ${{ inputs.image_tag }}

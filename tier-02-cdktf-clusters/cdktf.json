@@ -1,0 +1,27 @@
+{
+  "language": "typescript",
+  "app": "npx ts-node -P tsconfig.infra.json -r ./src/infra/tools/register-paths.js src/infra/main.ts",
+  "projectId": "cdktf-demo-tier-02-clusters",
+  "sendCrashReports": "false",
+  "terraformProviders": [
+    "hashicorp/aws@=5.100.0",
+    "hashicorp/null@=3.2.3"
+  ],
+  "terraformModules": [
+    "terraform-aws-modules/eks/aws@20.24.0",
+    { "name": "aws-eks-cluster", "source": "./modules/aws-eks-cluster" },
+    { "name": "aws-eks-nodegroup", "source": "./modules/aws-eks-nodegroup" },
+    { "name": "aws-ecr", "source": "./modules/aws-ecr" },
+    { "name": "aws-secrets", "source": "./modules/aws-secrets" }
+  ],
+  "context": {
+    "cdktfRelativeModules": [
+      "./modules/aws-eks-cluster",
+      "./modules/aws-eks-nodegroup",
+      "./modules/aws-ecr",
+      "./modules/aws-secrets"
+    ]
+  },
+  "output": "out/infra",
+  "codeMakerOutput": "out/gen"
+}

@@ -1,0 +1,92 @@
+name: _shared-cdktf-tier
+
+# Reusable: plan + apply for one CDKTF tier.
+# Auth: GitHub OIDC → IAM role (vars.AWS_ROLE_ARN). NO secrets.
+# Logs piped to <tier>/logs/ via the cdktf-skill convention; the artifact
+# upload below makes them inspectable from the Actions UI too.
+
+on:
+  workflow_call:
+    inputs:
+      tier_dir:
+        description: "Directory of the CDKTF tier (e.g. tier-02-cdktf-clusters)"
+        required: true
+        type: string
+      stack:
+        description: "Stack name (devnet)"
+        required: true
+        type: string
+      apply:
+        description: "Run cdktf deploy after the plan"
+        required: false
+        type: boolean
+        default: false
+      extra_vars:
+        description: "Extra -var args (e.g. -var image_tag=v0.1.0)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  plan-and-apply:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.tier_dir }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Install CDKTF + project deps
+        run: |
+          npm install -g cdktf-cli@0.21.0
+          npm install
+
+      - name: cdktf get
+        run: cdktf get
+
+      - name: cdktf synth ${{ inputs.stack }}
+        run: |
+          mkdir -p logs
+          cdktf synth ${{ inputs.stack }} 2>&1 | tee "logs/synth-$(date -u +%Y%m%dT%H%M%SZ).log"
+
+      - name: cdktf plan ${{ inputs.stack }}
+        run: |
+          cdktf plan ${{ inputs.stack }} ${{ inputs.extra_vars }} \
+            2>&1 | tee "logs/plan-$(date -u +%Y%m%dT%H%M%SZ).log"
+
+      - name: Upload plan logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdktf-${{ inputs.tier_dir }}-${{ github.run_id }}
+          path: ${{ inputs.tier_dir }}/logs/
+
+      - name: cdktf deploy ${{ inputs.stack }}
+        if: ${{ inputs.apply }}
+        run: |
+          cdktf deploy ${{ inputs.stack }} --auto-approve ${{ inputs.extra_vars }} \
+            2>&1 | tee "logs/deploy-$(date -u +%Y%m%dT%H%M%SZ).log"
+
+      - name: Upload deploy logs
+        if: ${{ inputs.apply && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdktf-${{ inputs.tier_dir }}-deploy-${{ github.run_id }}
+          path: ${{ inputs.tier_dir }}/logs/
