@@ -61,6 +61,57 @@
           doCheck = false;
         });
 
+        # ── Cross-compiled static binary for x86_64-linux-musl ──────────
+        # Builds FROM any host (including aarch64-darwin) WITHOUT a Linux
+        # builder VM. Uses Rust's built-in cross-compilation + a musl
+        # cross-compiler from nixpkgs. The resulting binary is statically
+        # linked and runs on any x86_64 Linux (including CI runners and
+        # EKS nodes). Reference: https://crane.dev/examples/cross-musl.html
+        crossToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [ "rust-src" ];
+          targets = [ "x86_64-unknown-linux-musl" ];
+        };
+        crossCraneLib = (crane.mkLib pkgs).overrideToolchain crossToolchain;
+        crossArgs = commonArgs // {
+          CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C link-self-contained=no";
+          HOST_CC = "${pkgs.stdenv.cc.nativePrefix}cc";
+        } // (if pkgs.stdenv.isLinux then {
+          depsBuildBuild = [ pkgs.pkgsCross.musl64.stdenv.cc ];
+          TARGET_CC = "${pkgs.pkgsCross.musl64.stdenv.cc}/bin/${pkgs.pkgsCross.musl64.stdenv.cc.targetPrefix}cc";
+        } else {
+          # On macOS: use zig as a cross-linker (works without a Linux VM)
+          depsBuildBuild = [ pkgs.zig ];
+          TARGET_CC = "zig cc -target x86_64-linux-musl";
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.writeShellScriptBin "zig-cc" ''exec zig cc -target x86_64-linux-musl "$@"''}/bin/zig-cc";
+          # Zig needs a writable cache dir; the Nix sandbox's $HOME is read-only
+          ZIG_GLOBAL_CACHE_DIR = "/tmp/zig-cache";
+        });
+        crossCargoArtifacts = crossCraneLib.buildDepsOnly crossArgs;
+        rust-demo-linux-amd64 = crossCraneLib.buildPackage (crossArgs // {
+          cargoArtifacts = crossCargoArtifacts;
+          pname = "rust-demo";
+          doCheck = false;
+        });
+
+        # OCI image from the cross-compiled binary — genuine linux/amd64,
+        # buildable on Mac without a VM.
+        rust-demo-image-amd64 = pkgs.dockerTools.buildLayeredImage {
+          name = "rust-demo";
+          tag = "latest";
+          architecture = "amd64";
+          contents = [ pkgs.cacert pkgs.tzdata ];
+          config = {
+            Entrypoint = [ "${rust-demo-linux-amd64}/bin/rust-demo" ];
+            ExposedPorts = { "8080/tcp" = { }; };
+            Env = [
+              "RUST_LOG=info"
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            ];
+          };
+        };
+
+        # ── Host-native OCI image (for CI, which is already linux/amd64) ──
         # OCI image consumed by ECR. Tag is :latest by default; CI re-tags
         # with the git tag before pushing.
         rust-demo-image = pkgs.dockerTools.buildLayeredImage {
@@ -104,7 +155,7 @@
       in
       {
         packages = {
-          inherit rust-demo rust-demo-image;
+          inherit rust-demo rust-demo-image rust-demo-linux-amd64 rust-demo-image-amd64;
           default = rust-demo;
         };
 
