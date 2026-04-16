@@ -1,4 +1,4 @@
-name: tier-03-internal-tools
+name: infra-tier-03-internal-tools
 
 on:
   workflow_dispatch:

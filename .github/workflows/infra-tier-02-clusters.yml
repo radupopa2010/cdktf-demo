@@ -1,4 +1,4 @@
-name: tier-02-clusters
+name: infra-tier-02-clusters
 
 on:
   workflow_dispatch:

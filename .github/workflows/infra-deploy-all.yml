@@ -1,4 +1,4 @@
-name: deploy-all
+name: infra-deploy-all
 
 # End-to-end orchestrator. Calls each tier in dependency order.
 # Manually triggered only — never on push, to avoid accidental full re-deploys.

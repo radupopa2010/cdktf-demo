@@ -1,4 +1,4 @@
-name: tier-04-applications
+name: infra-tier-04-applications
 
 on:
   workflow_dispatch:

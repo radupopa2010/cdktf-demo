@@ -1,4 +1,4 @@
-name: _shared-cdktf-tier
+name: _infra-shared-cdktf-tier
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Reusable workflow — `_` prefix is the convention for "internal, only ever

@@ -1,4 +1,4 @@
-name: tier-01-environments
+name: infra-tier-01-environments
 
 on:
   workflow_dispatch:
