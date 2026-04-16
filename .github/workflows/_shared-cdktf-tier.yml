@@ -1,9 +1,74 @@
 name: _shared-cdktf-tier
 
-# Reusable: plan + apply for one CDKTF tier.
-# Auth: GitHub OIDC → IAM role (vars.AWS_ROLE_ARN). NO secrets.
-# Logs piped to <tier>/logs/ via the cdktf-skill convention; the artifact
-# upload below makes them inspectable from the Actions UI too.
+# ─────────────────────────────────────────────────────────────────────────────
+# Reusable workflow — `_` prefix is the convention for "internal, only ever
+# triggered via workflow_call from another workflow in this repo".
+#
+# Purpose
+#   The single source of truth for "how do we deploy a CDKTF tier?". Each
+#   per-tier workflow (tier-01-environments.yml, tier-02-clusters.yml,
+#   tier-03-internal-tools.yml, tier-04-applications.yml) is a thin wrapper
+#   that defines its own triggers (push/path filters, workflow_dispatch,
+#   workflow_call) and then delegates to this workflow with `uses:`. The
+#   orchestrator (deploy-all.yml) and the release pipeline (app-release.yml)
+#   chain the per-tier workflows together. Bumping the Terraform version,
+#   swapping the OIDC role, changing the state-backend naming, or adding a
+#   step like `cdktf destroy` is therefore a one-file edit.
+#
+# What it does, end-to-end
+#   1. Checkout, set up Node 20, install Terraform 1.9.8.
+#   2. Exchange a GitHub OIDC token for AWS STS creds by assuming
+#      vars.AWS_ROLE_ARN (the cdktf-demo-gha role).
+#   3. Compute CDKTF_STATE_BUCKET / CDKTF_STATE_LOCK_TABLE from the AWS
+#      caller identity and export them so the TS stack code (which reads
+#      these env vars to wire the S3 backend) sees them.
+#   4. `npm install` the tier's deps; `cdktf get` to generate provider/
+#      module bindings into out/gen/.
+#   5. `cdktf synth <stack>` (TypeScript → Terraform JSON).
+#   6. `cdktf plan <stack>` with any extra_vars (e.g. -var image_tag=v0.1.1).
+#   7. Upload the tier's logs/ dir as an artifact (always, even on failure).
+#   8. If inputs.apply is true: `cdktf deploy <stack> --auto-approve` and
+#      a second logs upload.
+#
+# Auth model — there are no GitHub Actions secrets in this repo
+#   - id-token: write enables OIDC.
+#   - aws-actions/configure-aws-credentials@v4 + vars.AWS_ROLE_ARN does the
+#     STS exchange. From that point on the runner has short-lived AWS creds
+#     in env (AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY/_SESSION_TOKEN).
+#   - Anything that genuinely needs a secret value (e.g. Cachix push token
+#     in app-build.yml) is loaded from AWS Secrets Manager AFTER the OIDC
+#     step using `aws secretsmanager get-secret-value`. That way nothing
+#     long-lived is stored in GitHub.
+#
+# Inputs (set by the caller)
+#   tier_dir    string     "tier-01-cdktf-environments" etc.
+#   stack       string     "devnet" — the CDKTF stack name in main.ts
+#   apply       boolean    false → plan only; true → also deploy
+#   extra_vars  string     passthrough for `-var key=value` (used by tier-04
+#                          to inject image_tag from the release pipeline)
+#
+# Why every cdktf step has `set -eo pipefail`
+#   The output of `cdktf synth/plan/deploy` is piped through `tee` so the
+#   tier-local logs/ dir captures everything. Without explicit pipefail
+#   inside `bash`, a non-zero exit from cdktf would be masked by tee's
+#   zero exit and the step (and run) would falsely report success — which
+#   it actually did in an earlier iteration of this file. Fixed for good now.
+#
+# How callers use it
+#
+#   # tier-02-clusters.yml
+#   on: { workflow_dispatch:, push: { paths: ["tier-02-cdktf-clusters/**"] } }
+#   jobs:
+#     deploy:
+#       uses: ./.github/workflows/_shared-cdktf-tier.yml
+#       with:
+#         tier_dir: tier-02-cdktf-clusters
+#         stack: devnet
+#         apply: true
+#
+# Not invokable directly — `on:` only declares `workflow_call`, so the
+# Actions UI won't show a "Run workflow" button for this file.
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   workflow_call:
