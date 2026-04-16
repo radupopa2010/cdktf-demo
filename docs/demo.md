@@ -47,18 +47,16 @@ curl "http://$ALB/version"
 
 > "This is the version EKS is serving right now. We're going to bump it and watch the pipeline put a new one up — without anyone touching kubectl, terraform, or AWS."
 
-### Beat 1 — Bump the version (20 s)
+### Beat 1 — Bump the version + commit locally (30 s)
 
 ```bash
 $EDITOR app/Cargo.toml
 # version = "0.1.X" → "0.1.(X+1)"
-```
-
-Show the one-line diff in the editor. Then refresh the lockfile (deterministic, fast):
-
-```bash
 (cd app && cargo update --offline -p rust-demo)
+git commit -am "app: bump to 0.1.X"
 ```
+
+Commit locally but **don't push yet** — you validate first. The commit gives Nix a clean git tree (no "uncommitted changes" warning) and a clean commit sha in `/version` (not `<sha>-dirty`).
 
 ### Beat 2 — Build + validate locally with Nix (30 s)
 
@@ -70,9 +68,9 @@ What happens, narrated:
 
 - `nix build .#rust-demo` — only the binary recompiles; every Rust dep comes from Cachix
 - Starts the binary on `:8080`, polls `/health`, asserts `/version` matches `Cargo.toml`
-- Built in ~30 s on a warm cache
+- Built in ~4 s on a warm cache (deps already in Cachix from previous CI runs)
 
-> "30 seconds because Cachix already has every dependency. No need to push to find out it's broken."
+> "4 seconds because Cachix already has every dependency. No need to push to find out it's broken."
 
 ```bash
 ./scripts/dev-down.sh
@@ -90,10 +88,10 @@ gh pr merge --squash --delete-branch
 
 > "Notice no tier workflow fired on push or merge — only app-only paths changed, the per-tier `paths:` filters didn't match. Releases are how you deploy."
 
-### Beat 4 — Cut the release (20 s)
+### Beat 4 — Push + cut the release (20 s)
 
 ```bash
-git checkout main && git pull
+git push origin main
 git tag -a v0.1.X -m "v0.1.X"
 git push origin v0.1.X
 gh release create v0.1.X --generate-notes
