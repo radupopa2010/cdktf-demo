@@ -66,29 +66,32 @@ Commit locally but **don't push yet** — you validate first. The commit gives N
 
 What happens, narrated:
 
-- `nix build .#rust-demo` — builds the native binary (validates the code compiles)
-- `nix build .#rust-demo-image` — builds the exact OCI image CI will push to ECR (warms the Cachix cache so CI gets a hit)
+- `nix build .#rust-demo` — builds the native macOS binary (validates the code compiles)
+- `nix build .#rust-demo-image` — builds the OCI image for the host arch
 - Starts the native binary on `:8080`, polls `/health`, asserts `/version` matches `Cargo.toml`
 
-> "We just built both the binary AND the container image. The image is the same Nix derivation CI will build — same inputs, same hash. When CI runs, it'll pull from Cachix instead of recompiling."
+> "The code compiles and serves the right version. Now let me also cross-compile the exact image CI will ship to ECR."
 
 ```bash
 ./scripts/dev-down.sh
 ```
 
-### Beat 3 — PR + merge (45 s)
+### Beat 2b — Cross-compile for CI's architecture + push to Cachix (~60 s)
 
 ```bash
-git checkout -b bump-to-0.1.X
-git commit -am "app: bump to 0.1.X"
-git push -u origin bump-to-0.1.X
-gh pr create --fill
-gh pr merge --squash --delete-branch
+nix build .#rust-demo-linux-amd64 .#rust-demo-image-amd64 --print-out-paths \
+  | cachix push radupopa2010
 ```
 
-> "Notice no tier workflow fired on push or merge — only app-only paths changed, the per-tier `paths:` filters didn't match. Releases are how you deploy."
+What happens, narrated:
 
-### Beat 4 — Push + cut the release (20 s)
+- `nix build .#rust-demo-linux-amd64` — cross-compiles a static `x86_64-linux-musl` ELF binary from your Mac using `zig cc` as the linker. No VM, no Docker, no remote builder.
+- `nix build .#rust-demo-image-amd64` — wraps that binary in an OCI image. Genuine `linux/amd64`, same arch as CI runners and EKS nodes.
+- `cachix push` — uploads both derivations to the shared cache. When CI runs `nix build .#rust-demo-image` next, it pulls from cache instead of recompiling. **This is local feeding CI.**
+
+> "I just cross-compiled a Linux x86_64 binary on my Apple Silicon Mac and pushed it to Cachix. Watch the CI build — it'll download instead of compile. 91 cache hits on the last run."
+
+### Beat 3 — Push + cut the release (20 s)
 
 ```bash
 git push origin main
@@ -100,7 +103,7 @@ gh run watch
 
 > "From here, GitHub Actions does everything. Zero humans in the loop."
 
-### Beat 5 — Watch CI use the cache (1–2 min)
+### Beat 4 — Watch CI use the cache (1–2 min)
 
 In the narrow terminal, `gh run watch` shows `app-release` light up:
 
@@ -115,22 +118,22 @@ copying path '/nix/store/...' from 'https://radupopa2010.cachix.org'
 
 > "Two punchlines on this screen. One: there are zero secrets in this repo's GitHub config — auth is OIDC, the Cachix token comes from AWS Secrets Manager. Two: every Rust dep is being pulled from cache, not recompiled. The build is the same Nix derivation we ran on my laptop 90 seconds ago."
 
-### Beat 6 — CI deploys (2–3 min)
+### Beat 5 — CI deploys (2–3 min)
 
 `infra-tier-04-applications` calls the reusable `_infra-shared-cdktf-tier.yml`. `cdktf deploy devnet --var=image_tag=v0.1.X`. Helm release rolls out, AWS LBC updates target groups.
 
-### Beat 7 — CI auto-validates with `smoke-test`
+### Beat 6 — CI auto-validates with `smoke-test`
 
 Final job: `aws eks update-kubeconfig`, then `./scripts/smoke-test.sh v0.1.X`. Polls the live ALB until `/version` equals the released tag. The Step Summary on the run page shows the live JSON in a fenced code block — point at the green ✅.
 
-### Beat 8 — Confirm from your laptop (10 s)
+### Beat 7 — Confirm from your laptop (10 s)
 
 ```bash
 curl "http://$ALB/version"
 # → {"version":"0.1.X","commit":"<new-sha>"}
 ```
 
-### Beat 9 (bonus) — "And here's the exact ECR bytes on my laptop" (30 s)
+### Beat 8 (bonus) — "And here's the exact ECR bytes on my laptop" (30 s)
 
 ```bash
 ./scripts/dev-pull.sh v0.1.X
