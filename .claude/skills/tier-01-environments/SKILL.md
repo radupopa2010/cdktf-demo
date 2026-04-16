@@ -58,4 +58,4 @@ These are written to S3-backed Terraform state and read by tier-02 via `data "te
 
 - **"Cannot find subnets for ALB"** — public subnets missing `kubernetes.io/role/elb=1` tag. Fix in module.
 - **Cost spike** — accidentally enabled multi-AZ NAT. Single NAT is the demo default.
-- **CIDR overlap with another env** — devnet uses `10.251.0.0/16` (matches Movement Labs convention). Don't reuse.
+- **CIDR overlap with another env** — devnet uses `10.251.0.0/16` (matches the convention I used in the past). Don't reuse.

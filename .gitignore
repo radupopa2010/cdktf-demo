@@ -49,3 +49,8 @@ Thumbs.db
 *.pem
 *.key
 secrets.json
+
+# Local-only AI workflow artifacts (not part of the project itself)
+plan.md
+tasks.md
+tasks.txt

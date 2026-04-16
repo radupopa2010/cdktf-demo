@@ -5,7 +5,7 @@ terraform {
   }
 }
 
-# Use the upstream AWS VPC module — same pattern as Movement Labs cdktf-environments.
+# Use the upstream AWS VPC module — same pattern I used in the past.
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.21.0"

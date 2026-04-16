@@ -1,8 +1,7 @@
 # cdktf-demo
 
-A small but realistic demo of the multi-tier CDKTF pattern from Movement Labs, scaled down to one environment (`devnet`), one AWS region (`eu-central-1`), and one tiny Rust app on EKS. Built with Nix + Cachix for reproducible local & CI builds, deployed via GitHub Actions using OIDC + AWS Secrets Manager (no GitHub-stored secrets).
+A small but realistic demo of the multi-tier CDKTF pattern I used in the past, scaled down to one environment (`devnet`), one AWS region (`eu-central-1`), and one tiny Rust app on EKS. Built with Nix + Cachix for reproducible local & CI builds, deployed via GitHub Actions using OIDC + AWS Secrets Manager (no GitHub-stored secrets).
 
-See [`plan.md`](./plan.md) for the full design and [`tasks.md`](./tasks.md) for live build progress.
 
 ## What's in here
 
@@ -413,12 +412,10 @@ nix build .#rust-demo --print-out-paths | cachix push radupopa2010
 - **No multi-AZ NAT**: one NAT gateway to keep costs near zero. Toggle in `tier-01/modules/aws-network/main.tf`.
 - **No observability tier**: no Prometheus, Grafana, Loki, Tempo. Add as `tier-05-cdktf-observability` following the same skill+module+stack pattern.
 - **No environment promotion (testnet/mainnet)**: every `environments.jsonc` keeps the structure but comments out non-devnet sections. Onboard a new env by uncommenting + adding a stack instantiation in the tier's `main.ts`.
-- **`AdministratorAccess` on the GHA role**: too broad for prod. Tighten via `bootstrap-github-oidc.sh` to the minimum set listed in `plan.md` §4b.
+- **`AdministratorAccess` on the GHA role**: too broad for prod. Tighten via `bootstrap-github-oidc.sh` to the minimum set: `AmazonVPCFullAccess`, `AmazonEKSClusterPolicy`, `AmazonEKSWorkerNodePolicy`, `AmazonEC2ContainerRegistryFullAccess`, `IAMFullAccess` (for IRSA), `SecretsManagerReadWrite`, plus scoped `s3:*` + `dynamodb:*` on the TF-state bucket and lock table.
 
 ## Useful entry points for future you (or AI)
 
-- Plan & rationale: [`plan.md`](./plan.md)
-- Live progress: [`tasks.md`](./tasks.md)
 - AI guidelines: [`CLAUDE.md`](./CLAUDE.md)
 - Per-tier skills: `.claude/skills/tier-XX-*/SKILL.md`
 - Safe `cdktf` invocation: `.claude/skills/cdktf/SKILL.md`

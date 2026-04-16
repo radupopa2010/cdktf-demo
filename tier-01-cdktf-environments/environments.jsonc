@@ -1,9 +1,9 @@
 // cdktf-demo environments configuration.
 //
-// Mirrors the Movement Labs `cdktf-environments/environments.jsonc` shape so
-// the multi-tier pattern is recognisable. For this demo, only `devnet` is
-// active; every other section is preserved (commented) to show how onboarding
-// a new environment would look without rewriting the file.
+// Mirrors the `cdktf-environments/environments.jsonc` shape I used in the
+// past so the multi-tier pattern is recognisable. For this demo, only `devnet`
+// is active; every other section is preserved (commented) to show how
+// onboarding a new environment would look without rewriting the file.
 {
     // ── ACTIVE ──────────────────────────────────────────────────────────────
     "devnet": {
@@ -19,7 +19,7 @@
     }
 
     // ── COMMENTED FOR FUTURE USE ────────────────────────────────────────────
-    // (Mirrors the Movement Labs layout. Uncomment + add a stack class in
+    // (Mirrors the layout I used in the past. Uncomment + add a stack class in
     //  src/infra/main.ts to onboard a new environment.)
 
     // "root": {

@@ -1,6 +1,6 @@
 # cdktf-demo — Claude AI Guidelines
 
-This is a **demo** project showing the multi-tier CDKTF pattern used at Movement Labs, scaled down to one environment (`devnet`) on AWS in `eu-central-1`. Read `plan.md` once at session start for the design; read `tasks.md` to see what's done.
+This is a **demo** project showing the multi-tier CDKTF pattern I used in the past, scaled down to one environment (`devnet`) on AWS in `eu-central-1`. Read `README.md` once at session start.
 
 ## 🚨 Critical safety rules
 
@@ -8,7 +8,7 @@ This is a **demo** project showing the multi-tier CDKTF pattern used at Movement
 2. **Always check first:** `ps aux | grep -E "(cdktf|terraform)" | grep -v grep` before running anything in a tier.
 3. **Always log:** every cdktf command must be piped to `tee <tier>/logs/cdktf-<cmd>-$(date +%Y%m%d-%H%M%S).log`. The `cdktf` skill (`.claude/skills/cdktf/SKILL.md`) wraps this.
 4. **Never run cdktf from this conversation without confirming with the user.** This conversation is for code, not deploys. Deploys happen via GitHub Actions or by the user invoking the script.
-5. **Never put secrets in `tfvars`, code, GitHub Actions secrets, or env files.** Secrets live in AWS Secrets Manager only. See `plan.md` §4a.
+5. **Never put secrets in `tfvars`, code, GitHub Actions secrets, or env files.** Secrets live in AWS Secrets Manager only. See `README.md` (Bootstrap → "Configure GitHub repo" + scripts/bootstrap-secrets.sh).
 
 ## Tier ownership
 
@@ -44,7 +44,7 @@ This is a **demo** project showing the multi-tier CDKTF pattern used at Movement
 - New tier: new top-level dir `tier-NN-cdktf-<name>/` + skill `.claude/skills/tier-NN-<name>/SKILL.md`
 - New environment (testnet, mainnet later): uncomment the section in each `environments.jsonc`, add `terraform.<env>.tfvars.json`, add a stack instantiation in `src/infra/main.ts`
 - New CI workflow: `.github/workflows/<purpose>.yml`, register in `deploy-all.yml` if it should run as part of orchestration
-- New secret: add to inventory in `plan.md` §4a, list it in `tier-02/modules/aws-secrets/variables.tf`, document `aws secretsmanager put-secret-value` in `scripts/bootstrap-secrets.sh`
+- New secret: list it in `tier-02-cdktf-clusters/modules/aws-secrets/variables.tf` (default `secret_names`), document `aws secretsmanager put-secret-value` in `scripts/bootstrap-secrets.sh`, and reference it via `data.aws_secretsmanager_secret_version` where consumed
 
 ## Test / lint commands per tier
 
