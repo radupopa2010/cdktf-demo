@@ -1,3 +1,4 @@
+import * as path from "path";
 import { Construct } from "constructs";
 import {
   TerraformStack,
@@ -100,12 +101,25 @@ export class ApplicationsDevnetStack extends TerraformStack {
       },
     });
 
+    // Resolve the chart to an absolute path at synth time. Relative paths
+    // don't survive cdktf copying the local module into out/.../assets/.
+    const chartPath = path.resolve(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "..",
+      "app",
+      "helm",
+      "rust-demo",
+    );
+
     const release = new TerraformHclModule(this, "rust_demo", {
       source: "./modules/kubernetes-rust-demo",
       variables: {
         namespace: config.app.namespace,
         release_name: config.app.release_name,
-        chart_path: "../../../app/helm/rust-demo",
+        chart_path: chartPath,
         image_repository: ecrRepoUrl,
         image_tag: imageTag.stringValue,
         replicas: config.app.replicas,
