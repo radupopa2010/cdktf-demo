@@ -32,7 +32,7 @@ name: _infra-shared-cdktf-tier
 #
 # Auth model — there are no GitHub Actions secrets in this repo
 #   - id-token: write enables OIDC.
-#   - aws-actions/configure-aws-credentials@v5 + vars.AWS_ROLE_ARN does the
+#   - aws-actions/configure-aws-credentials@v6 + vars.AWS_ROLE_ARN does the
 #     STS exchange. From that point on the runner has short-lived AWS creds
 #     in env (AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY/_SESSION_TOKEN).
 #   - Anything that genuinely needs a secret value (e.g. Cachix push token
@@ -131,7 +131,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
