@@ -28,17 +28,25 @@ case "$MODE" in
     exit 2 ;;
 esac
 
-# ── Build the binary (native) or the OCI image (container) ───────────────
+# ── Build both the binary AND the OCI image ──────────────────────────────
+# The binary is what we run locally for validation.
+# The OCI image is what CI builds and pushes to ECR. Building it here too
+# means Cachix gets the derivation cached → CI's `nix build .#rust-demo-image`
+# is a cache hit. On macOS we can't docker-run the image (it's a Mach-O binary
+# inside a linux image → exec format error), but building it is the point:
+# same Nix derivation, same cache, same artifact CI ships.
 START=$(date +%s)
-if [ "$MODE" = "native" ]; then
-  say "Building rust-demo native binary with Nix (Cachix-backed)"
-  nix build .#rust-demo --print-build-logs
-  BIN="$(readlink -f result)/bin/rust-demo"
-  ok "Built in $(( $(date +%s) - START ))s — $(readlink -f result)"
-else
-  say "Building rust-demo OCI image with Nix (Cachix-backed)"
-  nix build .#rust-demo-image --print-build-logs
-  ok "Built in $(( $(date +%s) - START ))s — store path: $(readlink -f result)"
+say "Building rust-demo binary + OCI image with Nix (Cachix-backed)"
+nix build .#rust-demo --print-build-logs
+BIN="$(readlink -f result)/bin/rust-demo"
+nix build .#rust-demo-image --print-build-logs -o result-image
+ok "Built in $(( $(date +%s) - START ))s"
+say "Binary: $(readlink -f result)"
+say "Image:  $(readlink -f result-image)"
+
+if [ "$MODE" = "container" ]; then
+  say "Loading OCI image into local Docker"
+  docker load < result-image | tail -1 | sed 's/^/    /'
 fi
 
 # ── Run it ───────────────────────────────────────────────────────────────

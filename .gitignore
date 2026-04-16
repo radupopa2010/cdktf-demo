@@ -30,6 +30,7 @@ target/
 # Nix
 result
 result-*
+result-image
 
 # direnv
 .direnv/

@@ -147,12 +147,30 @@ When `gh release create vX.Y.Z` fires `app-release.yml`, the workflow file used 
 <summary><b>Prereqs</b></summary>
 
 - AWS account, `aws configure sso` profile **radupopa** with admin-ish access
-- `nix` (with flakes enabled): `bash <(curl -L https://nixos.org/nix/install)` then `mkdir -p ~/.config/nix && echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf`
+- `nix` (with flakes enabled) — recommend [Determinate Nix](https://determinate.systems/nix/) which includes flakes + a native Linux builder for macOS
 - `direnv` (optional but recommended): `brew install direnv`
+- `docker` (Docker Desktop or Colima) — used by `dev-pull.sh` for local container validation
 - A GitHub repo to host this (e.g. `radupopa2010/cdktf-demo`)
 - The `gh` CLI authenticated: `gh auth login`
 
 Everything else (cdktf, terraform, kubectl, helm, awscli, jq, cachix) comes from the Nix devshell.
+
+### macOS: enable the native Linux builder (optional, for cross-arch Cachix)
+
+This lets your Mac build `x86_64-linux` artifacts locally so `cachix push` warms the cache for CI (which runs on Linux). Without it, local and CI builds are separate Nix derivations (different arch) and don't share cache.
+
+**Determinate Nix** (3.8.4+) ships a built-in builder using macOS's Virtualization framework. Enable it in `/etc/nix/nix.custom.conf` (not `nix.conf` — Determinate overwrites that on daemon restart):
+
+```bash
+printf 'external-builders = [{"systems":["aarch64-linux","x86_64-linux"],"program":"/usr/local/bin/determinate-nixd","args":["builder"]}]\nextra-platforms = aarch64-linux x86_64-linux\nextra-experimental-features = external-builders\n' \
+  | sudo tee /etc/nix/nix.custom.conf
+sudo launchctl kickstart -k system/systems.determinate.nix-daemon
+nix config show | grep external-builders   # should show the JSON array
+```
+
+> **Note:** The native Linux builder is a gated feature. If you see "The Native Linux Builder is not currently available", email support@determinate.systems to request access. Alternative: use [nix-darwin's `linux-builder` module](https://nixcademy.com/posts/macos-linux-builder/) (open-source, boots a lightweight NixOS VM).
+
+Once enabled, `nix build .#packages.x86_64-linux.rust-demo-image` cross-builds the same image CI produces. Push it to Cachix and CI gets a direct cache hit.
 
 </details>
 

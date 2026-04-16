@@ -58,7 +58,7 @@ git commit -am "app: bump to 0.1.X"
 
 Commit locally but **don't push yet** — you validate first. The commit gives Nix a clean git tree (no "uncommitted changes" warning) and a clean commit sha in `/version` (not `<sha>-dirty`).
 
-### Beat 2 — Build + validate locally with Nix (30 s)
+### Beat 2 — Build + validate locally with Nix (~60 s)
 
 ```bash
 ./scripts/dev-up.sh
@@ -66,11 +66,11 @@ Commit locally but **don't push yet** — you validate first. The commit gives N
 
 What happens, narrated:
 
-- `nix build .#rust-demo` — only the binary recompiles; every Rust dep comes from Cachix
-- Starts the binary on `:8080`, polls `/health`, asserts `/version` matches `Cargo.toml`
-- Built in ~4 s on a warm cache (deps already in Cachix from previous CI runs)
+- `nix build .#rust-demo` — builds the native binary (validates the code compiles)
+- `nix build .#rust-demo-image` — builds the exact OCI image CI will push to ECR (warms the Cachix cache so CI gets a hit)
+- Starts the native binary on `:8080`, polls `/health`, asserts `/version` matches `Cargo.toml`
 
-> "4 seconds because Cachix already has every dependency. No need to push to find out it's broken."
+> "We just built both the binary AND the container image. The image is the same Nix derivation CI will build — same inputs, same hash. When CI runs, it'll pull from Cachix instead of recompiling."
 
 ```bash
 ./scripts/dev-down.sh
