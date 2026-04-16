@@ -6,7 +6,7 @@
   "terraformProviders": [
     "hashicorp/aws@=5.100.0",
     "hashicorp/kubernetes@=2.32.0",
-    "hashicorp/helm@=2.15.0"
+    "hashicorp/helm@=3.0.2"
   ],
   "terraformModules": [
     {
