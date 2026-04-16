@@ -11,6 +11,11 @@ services:
   rust-demo:
     image: rust-demo:latest        # populated by `docker load < result`
     pull_policy: never             # never reach for a registry; image is local
+    # Match the platform of the Nix-built image. dev-up.sh sets this to
+    # linux/arm64 on Apple Silicon, linux/amd64 on x86 hosts. Without it,
+    # Docker Desktop on macOS would default to linux/amd64 and you'd see
+    # "exec format error" when running an arm64 binary.
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     ports:
       - "8080:8080"
     environment:

@@ -2,8 +2,12 @@
 
 A small but realistic demo of the multi-tier CDKTF pattern I used in the past, scaled down to one environment (`devnet`), one AWS region (`eu-central-1`), and one tiny Rust app on EKS. Built with Nix + Cachix for reproducible local & CI builds, deployed via GitHub Actions using OIDC + AWS Secrets Manager (no GitHub-stored secrets).
 
+> **Demo runbook:** see [`docs/demo.md`](./docs/demo.md) for the tonight-vs-tomorrow walkthrough. This README is the reference; the runbook is the script.
 
-## What's in here
+---
+
+<details>
+<summary><b>What's in here</b></summary>
 
 ```text
 .
@@ -14,18 +18,21 @@ A small but realistic demo of the multi-tier CDKTF pattern I used in the past, s
 ├── app/                             # Rust + axum demo service, Helm chart, docker-compose
 ├── flake.nix                        # Reproducible Rust toolchain + OCI image, Cachix-cached
 ├── .github/workflows/               # One workflow per tier + orchestrator + app-release
-├── scripts/                         # Bootstrap + deploy-all + destroy-all helpers
-├── scripts/dev-up.sh                # Build OCI image with Nix + run via docker compose
+├── scripts/                         # Bootstrap + dev-up + smoke-test + destroy-all helpers
+├── docs/demo.md                     # Tonight + tomorrow demo script
 └── .claude/skills/                  # Per-tier AI skills + cdktf safety + workflow trigger
 ```
 
-## Architecture overview
+</details>
+
+<details>
+<summary><b>Architecture overview</b></summary>
 
 ```text
    ┌──────────────────────────────────────────────────────────┐
    │              GitHub Actions (OIDC, no secrets)           │
    │  deploy-all → tier-01 → tier-02 → tier-03 → tier-04      │
-   │              app-release (on tag) → app-build → tier-04  │
+   │  app-release (on tag) → app-build → tier-04 → smoke-test │
    └────────────────────────┬─────────────────────────────────┘
                             │ assume role cdktf-demo-gha
                             ▼
@@ -52,17 +59,23 @@ A small but realistic demo of the multi-tier CDKTF pattern I used in the past, s
      CI nix build      ─push─►  Cachix radupopa2010  ◄─pull─  local nix run
 ```
 
-## Prereqs
+</details>
+
+<details>
+<summary><b>Prereqs</b></summary>
 
 - AWS account, `aws configure sso` profile **radupopa** with admin-ish access
 - `nix` (with flakes enabled): `bash <(curl -L https://nixos.org/nix/install)` then `mkdir -p ~/.config/nix && echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf`
 - `direnv` (optional but recommended): `brew install direnv`
-- A GitHub repo to host this (let's say `<owner>/cdktf-demo`)
+- A GitHub repo to host this (e.g. `radupopa2010/cdktf-demo`)
 - The `gh` CLI authenticated: `gh auth login`
 
 Everything else (cdktf, terraform, kubectl, helm, awscli, jq, cachix) comes from the Nix devshell.
 
-## One-time bootstrap
+</details>
+
+<details>
+<summary><b>One-time bootstrap</b></summary>
 
 Run these once in order. Each is idempotent.
 
@@ -93,7 +106,8 @@ GITHUB_OWNER=radupopa2010 GITHUB_REPO=cdktf-demo \
   ./scripts/bootstrap-github-oidc.sh
 ```
 
-What it does (and what you'd run by hand if you didn't use the script):
+<details>
+<summary>What it does (manual equivalent, in case you want to review)</summary>
 
 ```bash
 # 3a. Create the OIDC provider (one-shot per account)
@@ -125,17 +139,13 @@ aws iam attach-role-policy --profile radupopa \
   --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
 ```
 
-**Verify:**
+Verify:
 
 ```bash
 ACCOUNT_ID=$(aws sts get-caller-identity --profile radupopa --query Account --output text)
 aws iam get-role --profile radupopa --role-name cdktf-demo-gha \
   --query 'Role.AssumeRolePolicyDocument.Statement[0].Condition'
-# Should print the StringLike condition with your repo.
-
 aws iam list-attached-role-policies --profile radupopa --role-name cdktf-demo-gha
-# Should list AdministratorAccess.
-
 echo "AWS_ROLE_ARN = arn:aws:iam::${ACCOUNT_ID}:role/cdktf-demo-gha"
 ```
 
@@ -146,6 +156,8 @@ The script is safe to re-run — it `update-assume-role-policy`s if the role alr
 - `repo:owner/repo:ref:refs/heads/main` (only main branch)
 - `repo:owner/repo:environment:production` (only when GitHub environment `production` is the target)
 - `repo:owner/repo:pull_request` (only PR contexts)
+
+</details>
 
 ### 4. Configure GitHub repo (no secrets — only repo variables)
 
@@ -165,179 +177,14 @@ Do **not** add anything to the **Secrets** tab. Real secrets live in AWS Secrets
 ./scripts/refresh-lbc-policy.sh
 ```
 
-### 6. Deploy tier-02 once (so secret shells exist)
+### 6. Deploy + populate secrets
 
-You can do this from CI — `gh workflow run tier-02-clusters.yml` — or locally for the first time. After tier-02 has run, the `null_resource` modules have created the secret SHELLS in AWS Secrets Manager.
+The remaining setup (deploy each tier in order, put the Cachix token in AWS Secrets Manager, cut the first release) is the script-able part of the demo. Follow [`docs/demo.md`](./docs/demo.md) → "Tonight" section.
 
-### 7. Populate the secret values
+</details>
 
-```bash
-./scripts/bootstrap-secrets.sh
-# You'll be prompted for the Cachix push token (cache: radupopa2010).
-# Get one at https://app.cachix.org/personal-auth-tokens
-```
-
-The token is `aws secretsmanager put-secret-value`'d into `cdktf-demo/devnet/cachix-radupopa2010-token`. Tier-02's terraform never sees the value.
-
-## First deployment walkthrough (the demo flow)
-
-End-to-end first run, in the order it should happen. Each step states an expected duration and how to know it succeeded. The whole walkthrough takes ~40 minutes wall-clock, mostly waiting on EKS.
-
-### A. Push the code to GitHub
-
-```bash
-git init -b main
-git add .
-git commit -m "initial cdktf-demo scaffold"
-git remote add origin git@github.com:radupopa2010/cdktf-demo.git
-git push -u origin main
-```
-
-> The push will trigger every `tier-*.yml` workflow at once because all four tier paths just changed. Three of them (tier-02/03/04) will fail on this very first push because the lower tiers haven't deployed yet — that's expected. We'll re-run them in order in the next steps. Once the demo is past the first deploy, the path filters do the right thing on subsequent pushes.
-
-### B. Deploy tier-01 (VPC) — ~3 minutes
-
-```bash
-gh workflow run tier-01-environments.yml
-gh run watch
-```
-
-Success when: the run is green and the workflow's "cdktf deploy" step shows `Apply complete! Resources: ~24 added`.
-
-### C. Deploy tier-02 (EKS + ECR + secret shells) — ~20 minutes
-
-```bash
-gh workflow run tier-02-clusters.yml
-gh run watch
-```
-
-Success when: green. EKS control plane is the slow part (~12 min) followed by node group rollout (~5 min). At the end, the secret SHELL `cdktf-demo/devnet/cachix-radupopa2010-token` exists in AWS Secrets Manager (no value yet).
-
-Verify from your laptop:
-
-```bash
-aws secretsmanager describe-secret --profile radupopa \
-  --secret-id cdktf-demo/devnet/cachix-radupopa2010-token
-aws eks update-kubeconfig --profile radupopa --region eu-central-1 --name cdktf-demo-devnet
-kubectl get nodes   # should show 1 t3.small node, Ready
-```
-
-### D. Put the Cachix push token in Secrets Manager
-
-```bash
-./scripts/bootstrap-secrets.sh
-# Paste the token from https://app.cachix.org/personal-auth-tokens
-# (cache: radupopa2010, scope: write).
-```
-
-This is the **only** time you ever interactively type a secret value. From here on, CI loads it via `aws secretsmanager get-secret-value` after the OIDC step.
-
-### E. Deploy tier-03 (AWS Load Balancer Controller) — ~3 minutes
-
-```bash
-./scripts/refresh-lbc-policy.sh    # one-shot: fetch upstream IAM policy
-git add tier-03-cdktf-internal-tools/modules/kubernetes-aws-load-balancer-controller/iam-policy.json
-git commit -m "tier-03: refresh LBC IAM policy"
-git push
-gh workflow run tier-03-internal-tools.yml
-gh run watch
-```
-
-Success when: `kubectl get pods -n kube-system | grep aws-load-balancer-controller` shows 2 pods running.
-
-### F. Open a PR with a small app change (the "PR demo" beat)
-
-```bash
-git checkout -b bump-greeting
-# Tiny edit — e.g. change the /version response message in app/src/main.rs
-git commit -am "app: include build commit in /version response"
-git push -u origin bump-greeting
-gh pr create --fill
-```
-
-The push triggers the per-tier workflows that touch changed paths — for an app-only change, none of them fire (the tier dirs are untouched). Add a tier change to demo per-tier triggers if you want to see them light up.
-
-```bash
-gh pr merge --squash --delete-branch
-```
-
-### G. Cut the first release — `app-release.yml` does everything
-
-```bash
-git checkout main && git pull
-git tag -a v0.1.0 -m "first cdktf-demo release"
-git push origin v0.1.0
-gh release create v0.1.0 --generate-notes
-gh run watch
-```
-
-What runs automatically:
-
-1. `app-release.yml` resolves the tag → `image_tag=v0.1.0`.
-2. `app-build.yml` (reusable) — Nix builds `rust-demo-image`, Cachix push (token from AWS SM), `docker tag` + `docker push` to ECR with both `v0.1.0` and `latest`.
-3. `tier-04-applications.yml` — `cdktf deploy devnet -var image_tag=v0.1.0`. Helm release renders, AWS Load Balancer Controller provisions an ALB.
-
-ALB takes ~3 minutes to become healthy after the Helm release lands.
-
-### H. Hit the endpoint
-
-```bash
-ALB=$(kubectl get ing rust-demo -n rust-demo \
-  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-echo "$ALB"
-curl "http://$ALB/version"
-# → {"version":"0.1.0","commit":"<git-sha>"}
-curl -I "http://$ALB/health"
-# → HTTP/1.1 200 OK
-```
-
-### I. The closer — bump and re-release to show the rolling update
-
-```bash
-# In app/Cargo.toml: version = "0.1.1"
-cd app && cargo update --workspace --offline 2>/dev/null; cd ..
-git commit -am "app: bump to 0.1.1"
-git push
-git tag -a v0.1.1 -m "0.1.1: nothing changed but the version, that's the point"
-git push origin v0.1.1
-gh release create v0.1.1 --generate-notes
-gh run watch
-```
-
-Watch the rolling deploy:
-
-```bash
-kubectl -n rust-demo rollout status deploy/rust-demo
-curl "http://$ALB/version"
-# → {"version":"0.1.1","commit":"<new-sha>"}
-```
-
-The Cachix payoff: the second build reuses the cached Rust artifacts from the first, so step G's ~6 min compile is now ~30 s.
-
-### Demo cheat-sheet (one terminal, one window)
-
-```bash
-# Setup (assumes bootstrap already done)
-gh workflow run tier-01-environments.yml && gh run watch
-gh workflow run tier-02-clusters.yml      && gh run watch
-./scripts/bootstrap-secrets.sh
-gh workflow run tier-03-internal-tools.yml && gh run watch
-
-# The actual demo beats
-git tag -a v0.1.0 -m "first" && git push origin v0.1.0
-gh release create v0.1.0 --generate-notes && gh run watch
-ALB=$(kubectl get ing rust-demo -n rust-demo -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-curl "http://$ALB/version"
-
-# Bump → second release → rolling update
-sed -i '' 's/^version = "0.1.0"/version = "0.1.1"/' app/Cargo.toml
-git commit -am "app: 0.1.1"
-git tag -a v0.1.1 -m "second" && git push origin v0.1.1 origin
-gh release create v0.1.1 --generate-notes && gh run watch
-curl "http://$ALB/version"
-```
-
-## Day-to-day
+<details>
+<summary><b>Day-to-day</b></summary>
 
 ### Trigger a full deploy from CI
 
@@ -352,13 +199,13 @@ gh run watch
 gh workflow run tier-02-clusters.yml
 ```
 
-### Cut a release of the app (recommended deploy path)
+### Cut a release of the app
 
 ```bash
 git tag -a v0.1.1 -m "bump to 0.1.1"
 git push origin v0.1.1
 gh release create v0.1.1 --generate-notes
-# app-release.yml auto-fires: nix build → push to ECR → tier-04 deploys with new tag
+# app-release.yml auto-fires: nix build → push to ECR → tier-04 deploys with new tag → smoke-test
 ```
 
 ### Verify the running app
@@ -367,41 +214,31 @@ gh release create v0.1.1 --generate-notes
 ALB=$(kubectl get ing rust-demo -n rust-demo \
   -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 curl "http://$ALB/version"   # → {"version":"0.1.1","commit":"<sha>"}
-curl -I "http://$ALB/health" # → 200 OK
-```
-
-## Local ↔ cloud parity (the validation flow)
-
-The whole point of Nix + Cachix in this demo is that **the OCI image you run on your laptop is bit-identical to what CI pushes to ECR and EKS pulls** (modulo CPU arch on Apple Silicon — see note below). One script ties it together:
-
-```bash
-./scripts/dev-up.sh
-```
-
-What it does:
-
-1. `nix build .#rust-demo-image` — Cachix-backed; cold ~5 min, warm ~30 s.
-2. `docker load < result` — loads the Nix-produced tarball as `rust-demo:latest` in your local Docker daemon.
-3. `docker compose -f app/docker-compose.yml up -d` — starts a container from that exact image (compose has `pull_policy: never`, never reaches for a registry).
-4. Polls `localhost:8080/health` until 200.
-5. `curl localhost:8080/version` and asserts the response matches the version in `app/Cargo.toml`.
-6. Prints the Nix store path so you can compare it to the one CI logs.
-
-Tear down with `./scripts/dev-down.sh`.
-
-### Validating after a cloud deploy
-
-```bash
 ./scripts/smoke-test.sh v0.1.1
 ```
 
-Polls the live ALB until `/version` returns the expected tag, then prints the JSON. Used by CI in the `app-release.yml` workflow's `smoke-test` job — same script, same exit codes, same output. If green in CI, green from your laptop.
+</details>
+
+<details>
+<summary><b>Local ↔ cloud parity (the validation flow)</b></summary>
+
+The story Nix + Cachix tells in this demo is **the artifact you run on your laptop is the artifact CI ships to ECR**. Three scripts cover the three meaningful checks:
+
+| Script | What it proves | Works on |
+|---|---|---|
+| `./scripts/dev-up.sh` | Source compiles; new version actually serves; Cachix used | Anywhere (default mode runs the native binary via `nix run`) |
+| `./scripts/dev-up.sh --container` | Same, but inside the OCI image Nix produces | Linux hosts; macOS only with [nix-darwin's linux-builder](https://nixcademy.com/posts/macos-linux-builder/) |
+| `./scripts/dev-pull.sh v0.1.X` | The **exact bits** CI pushed to ECR run on your laptop | Anywhere (Rosetta on Apple Silicon) |
+| `./scripts/smoke-test.sh v0.1.X` | The deployed ALB is serving that version | Anywhere with kubectl access to the cluster |
+| `./scripts/dev-build-multi.sh` | Image builds for both linux/amd64 + linux/arm64 from one host | Linux native; macOS only with linux-builder |
+
+Tear down whatever `dev-up.sh` started with `./scripts/dev-down.sh`.
 
 ### Apple Silicon caveat
 
-`dockerTools.buildLayeredImage` builds for the host architecture. On an M-series Mac you'll get an arm64 image; CI builds amd64. The binaries differ in CPU instructions but every other input (toolchain, deps, Cargo.lock, source tree) is identical — same Nix derivation hash for everything except the system tag. To get bit-for-bit parity locally, build with `--system x86_64-linux` (uses Rosetta or qemu, slow). Worth it only if you're chasing an arch-specific bug.
+`dockerTools.buildLayeredImage` builds for the host architecture. On an M-series Mac that means an arm64 image (or a Mach-O binary if you use the native mode — which is fine because we run it directly, not in Docker). For the OCI flow, either set up nix-darwin's linux-builder (one-time) or use `dev-pull.sh` to fetch from ECR.
 
-### Build directly via Nix + Cachix (no container)
+### Nix + Cachix without containers
 
 ```bash
 # As a reader — pull from cache, no compile
@@ -415,7 +252,10 @@ nix build .#rust-demo --print-out-paths | cachix push radupopa2010
 # Next CI run reuses these store paths.
 ```
 
-## Tear down
+</details>
+
+<details>
+<summary><b>Tear down</b></summary>
 
 ```bash
 ./scripts/destroy-all.sh
@@ -423,7 +263,10 @@ nix build .#rust-demo --print-out-paths | cachix push radupopa2010
 # Safe to re-run; failures don't cascade (set +e per tier).
 ```
 
-## What's intentionally NOT in this demo
+</details>
+
+<details>
+<summary><b>What's intentionally NOT in this demo</b></summary>
 
 - **No Route 53 / TLS**: ALB serves plain HTTP on its own DNS name. Add cert-manager + a Route 53 zone for prod.
 - **No multi-AZ NAT**: one NAT gateway to keep costs near zero. Toggle in `tier-01/modules/aws-network/main.tf`.
@@ -431,9 +274,15 @@ nix build .#rust-demo --print-out-paths | cachix push radupopa2010
 - **No environment promotion (testnet/mainnet)**: every `environments.jsonc` keeps the structure but comments out non-devnet sections. Onboard a new env by uncommenting + adding a stack instantiation in the tier's `main.ts`.
 - **`AdministratorAccess` on the GHA role**: too broad for prod. Tighten via `bootstrap-github-oidc.sh` to the minimum set: `AmazonVPCFullAccess`, `AmazonEKSClusterPolicy`, `AmazonEKSWorkerNodePolicy`, `AmazonEC2ContainerRegistryFullAccess`, `IAMFullAccess` (for IRSA), `SecretsManagerReadWrite`, plus scoped `s3:*` + `dynamodb:*` on the TF-state bucket and lock table.
 
-## Useful entry points for future you (or AI)
+</details>
 
+<details>
+<summary><b>Useful entry points for future you (or AI)</b></summary>
+
+- Demo runbook: [`docs/demo.md`](./docs/demo.md)
 - AI guidelines: [`CLAUDE.md`](./CLAUDE.md)
 - Per-tier skills: `.claude/skills/tier-XX-*/SKILL.md`
 - Safe `cdktf` invocation: `.claude/skills/cdktf/SKILL.md`
 - Workflow triggering: `.claude/skills/github-workflow-trigger/SKILL.md`
+
+</details>

@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Build the rust-demo OCI image with Nix (pulling from Cachix where possible),
-# load it into the local Docker daemon, run it via docker-compose, and curl
-# /version to prove the bits work.
-#
-# This is the "same artifact local and cloud" validation step in the demo:
-# the image you run here is the SAME Nix derivation CI builds and pushes to
-# ECR. Bit-identical, modulo CPU arch — see note at the bottom.
+# Build the rust-demo with Nix (Cachix-backed) and run it locally so you can
+# curl /version before pushing. Default mode is the native binary — works on
+# every host, including Apple Silicon. Use --container for the OCI flow
+# (requires a Linux host OR a configured nix-darwin linux-builder, since
+# `dockerTools` images carry the *host's* Linux binaries; macOS hosts produce
+# Mach-O binaries inside a "linux" image, which docker won't exec).
 
 set -euo pipefail
 
@@ -17,24 +16,58 @@ say() { printf "${CYAN}==>${RESET} %s\n" "$*"; }
 ok()  { printf "${GREEN}✅ %s${RESET}\n" "$*"; }
 warn(){ printf "${YELLOW}⚠️  %s${RESET}\n" "$*"; }
 
-# ── 1. Build the OCI image with Nix ──────────────────────────────────────
-say "Building rust-demo OCI image with Nix (Cachix-backed)"
+MODE="${1:-native}"   # native | --container
+
+case "$MODE" in
+  native|--native|-n)
+    MODE="native" ;;
+  container|--container|-c)
+    MODE="container" ;;
+  *)
+    echo "usage: $0 [native|--container]" >&2
+    exit 2 ;;
+esac
+
+# ── Build the binary (native) or the OCI image (container) ───────────────
 START=$(date +%s)
-nix build .#rust-demo-image --print-build-logs
-ELAPSED=$(( $(date +%s) - START ))
-STORE_PATH=$(readlink -f result)
-ok "Built in ${ELAPSED}s — store path: $STORE_PATH"
+if [ "$MODE" = "native" ]; then
+  say "Building rust-demo native binary with Nix (Cachix-backed)"
+  nix build .#rust-demo --print-build-logs
+  BIN="$(readlink -f result)/bin/rust-demo"
+  ok "Built in $(( $(date +%s) - START ))s — $(readlink -f result)"
+else
+  say "Building rust-demo OCI image with Nix (Cachix-backed)"
+  nix build .#rust-demo-image --print-build-logs
+  ok "Built in $(( $(date +%s) - START ))s — store path: $(readlink -f result)"
+fi
 
-# ── 2. Load into local Docker ────────────────────────────────────────────
-say "Loading image into local Docker"
-LOADED=$(docker load < result | tail -1)
-echo "    $LOADED"
+# ── Run it ───────────────────────────────────────────────────────────────
+PIDFILE="$ROOT/.dev-up.pid"
+if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+  warn "Previous dev-up still running (PID $(cat "$PIDFILE")); stopping it"
+  kill "$(cat "$PIDFILE")" 2>/dev/null || true
+  rm -f "$PIDFILE"
+fi
 
-# ── 3. Start the container ───────────────────────────────────────────────
-say "Starting docker compose"
-docker compose -f app/docker-compose.yml up -d --force-recreate
+if [ "$MODE" = "native" ]; then
+  say "Starting rust-demo (native binary, background)"
+  RUST_LOG=info "$BIN" >/tmp/rust-demo.log 2>&1 &
+  echo $! > "$PIDFILE"
+  TEAR_DOWN_HINT="kill \$(cat $PIDFILE) && rm $PIDFILE"
+else
+  say "Loading image into local Docker"
+  docker load < result | tail -1 | sed 's/^/    /'
 
-# ── 4. Wait for /health ──────────────────────────────────────────────────
+  case "$(uname -m)" in
+    arm64|aarch64) export DOCKER_PLATFORM=linux/arm64 ;;
+    x86_64|amd64)  export DOCKER_PLATFORM=linux/amd64 ;;
+  esac
+  say "Starting docker compose (platform=${DOCKER_PLATFORM:-default})"
+  docker compose -f app/docker-compose.yml up -d --force-recreate
+  TEAR_DOWN_HINT="./scripts/dev-down.sh"
+fi
+
+# ── Poll /health ─────────────────────────────────────────────────────────
 say "Waiting for /health on localhost:8080"
 for i in $(seq 1 30); do
   if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
@@ -42,14 +75,18 @@ for i in $(seq 1 30); do
     break
   fi
   if [ "$i" = "30" ]; then
-    warn "Never came up; tail of container logs:"
-    docker compose -f app/docker-compose.yml logs --tail 30 rust-demo
+    warn "Never came up; tail of logs:"
+    if [ "$MODE" = "native" ]; then
+      tail -n 30 /tmp/rust-demo.log
+    else
+      docker compose -f app/docker-compose.yml logs --tail 30 rust-demo
+    fi
     exit 1
   fi
   sleep 1
 done
 
-# ── 5. Hit /version and print ────────────────────────────────────────────
+# ── Hit /version and assert ──────────────────────────────────────────────
 say "GET /version"
 RESP=$(curl -sf http://localhost:8080/version)
 echo "    $RESP"
@@ -64,25 +101,8 @@ else
   exit 1
 fi
 
-# ── 6. Note on parity with cloud ─────────────────────────────────────────
-HOST_ARCH=$(uname -m)
-case "$HOST_ARCH" in
-  arm64|aarch64)
-    cat <<EOF
-
-${YELLOW}Note on local↔cloud parity:${RESET}
-  Your host is arm64. The image you just ran is the arm64 build of the same
-  Nix derivation CI builds. CI runs on amd64 (ubuntu-latest), so the bytes
-  inside the binary differ in CPU instructions, but every other input is
-  identical (toolchain, deps, source tree). To get bit-for-bit identical
-  artifacts on Apple Silicon, build with --system x86_64-linux (uses Rosetta
-  or qemu) — slower, only worth it if you need to debug an arch-specific bug.
-
-EOF
-    ;;
-esac
-
 cat <<EOF
 
-Stop with: ./scripts/dev-down.sh   (or: docker compose -f app/docker-compose.yml down)
+Mode: $MODE
+Stop with: $TEAR_DOWN_HINT
 EOF

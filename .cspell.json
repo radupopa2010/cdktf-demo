@@ -60,7 +60,14 @@
     "kustomization",
     "Kustomization",
     "synthesises",
-    "authtoken"
+    "authtoken",
+    "Prereqs",
+    "direnv",
+    "awscli",
+    "binfmt",
+    "rosetta",
+    "Rosetta",
+    "Nixcademy"
   ],
   "ignorePaths": [
     "node_modules",
