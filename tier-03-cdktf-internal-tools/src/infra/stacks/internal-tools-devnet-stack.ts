@@ -35,7 +35,7 @@ export class InternalToolsDevnetStack extends TerraformStack {
 
     const awsProfile = new TerraformVariable(this, "aws_profile", {
       type: "string",
-      default: "radupopa",
+      default: "",
     });
 
     new S3Backend(this, {

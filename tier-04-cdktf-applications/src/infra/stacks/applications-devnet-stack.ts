@@ -35,7 +35,7 @@ export class ApplicationsDevnetStack extends TerraformStack {
 
     const awsProfile = new TerraformVariable(this, "aws_profile", {
       type: "string",
-      default: "radupopa",
+      default: "",
     });
 
     // Image tag is overridden by CI on tag releases.

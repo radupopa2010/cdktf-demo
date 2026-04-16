@@ -77,12 +77,16 @@ jobs:
         run: cdktf get
 
       - name: cdktf synth ${{ inputs.stack }}
+        shell: bash
         run: |
+          set -eo pipefail
           mkdir -p logs
           cdktf synth ${{ inputs.stack }} 2>&1 | tee "logs/synth-$(date -u +%Y%m%dT%H%M%SZ).log"
 
       - name: cdktf plan ${{ inputs.stack }}
+        shell: bash
         run: |
+          set -eo pipefail
           cdktf plan ${{ inputs.stack }} ${{ inputs.extra_vars }} \
             2>&1 | tee "logs/plan-$(date -u +%Y%m%dT%H%M%SZ).log"
 
@@ -95,7 +99,9 @@ jobs:
 
       - name: cdktf deploy ${{ inputs.stack }}
         if: ${{ inputs.apply }}
+        shell: bash
         run: |
+          set -eo pipefail
           cdktf deploy ${{ inputs.stack }} --auto-approve ${{ inputs.extra_vars }} \
             2>&1 | tee "logs/deploy-$(date -u +%Y%m%dT%H%M%SZ).log"
 

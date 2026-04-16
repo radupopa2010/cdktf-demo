@@ -32,7 +32,7 @@ export class ClustersDevnetStack extends TerraformStack {
 
     const awsProfile = new TerraformVariable(this, "aws_profile", {
       type: "string",
-      default: "radupopa",
+      default: "",
       description: "AWS profile (overridden by OIDC in CI).",
     });
 

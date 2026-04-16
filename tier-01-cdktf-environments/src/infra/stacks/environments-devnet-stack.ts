@@ -34,7 +34,7 @@ export class EnvironmentsDevnetStack extends TerraformStack {
     const awsProfile = new TerraformVariable(this, "aws_profile", {
       type: "string",
       description: "AWS profile to use locally (overridden in CI by OIDC).",
-      default: "radupopa",
+      default: "",
     });
 
     new S3Backend(this, {
