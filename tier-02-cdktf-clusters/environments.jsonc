@@ -15,9 +15,12 @@
                 "desired_size": 1,
                 "disk_size_gb": 20,
                 "labels": { "workload": "rust-demo" },
-                "taints": [
-                    { "key": "workload", "value": "rust-demo", "effect": "NO_SCHEDULE" }
-                ]
+                // No taints in the demo: with a single t3.small node group,
+                // tainting would block CoreDNS / kube-proxy / LBC from
+                // scheduling. In production you'd add a second untainted
+                // "system" node group for these add-ons; here the label
+                // alone (consumed via the app's nodeSelector) is enough.
+                "taints": []
             }
         },
         "ecr": {

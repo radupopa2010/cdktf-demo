@@ -30,15 +30,13 @@ resources:
     cpu: 200m
     memory: 128Mi
 
-# Pin to the dedicated app node group from tier-02
+# Pin to the app node group via the label set in tier-02. (No taint
+# tolerations needed: tier-02 leaves the single node group untainted so
+# CoreDNS / kube-proxy / LBC can schedule alongside the app.)
 nodeSelector:
   workload: rust-demo
 
-tolerations:
-  - key: workload
-    operator: Equal
-    value: rust-demo
-    effect: NoSchedule
+tolerations: []
 
 podAnnotations: {}
 
