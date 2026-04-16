@@ -1,234 +1,188 @@
 # Demo runbook
 
-The end-to-end story this repo is built to tell — split into what to do **tonight** (everything that's slow / interactive / risky to do live) and what to do **tomorrow in front of the room** (everything that's fast and visually satisfying).
+The live, in-front-of-the-room demo. ~8 minutes if everything's already deployed (which it is, after the pre-deploy you ran the night before).
 
-Skim once before you do either. Both halves assume the bootstrap section in [`../README.md`](../README.md) is already done (TF state backend, OIDC role, repo variables).
+> Pre-deploy is no longer in this file — it's a one-time setup that's already done. If you're starting from a fresh AWS account, do the steps in the README's "One-time bootstrap" section first.
 
----
+## Setup before walking on stage
 
-## Tonight — pre-deploy + smoke test (≈ 30 min wall-clock)
+Open two terminals:
 
-Goal: by the time you go to bed, devnet is live with `v0.1.0` deployed, the ALB is responding, and you've already curled it once. The morning is just bumping a version and watching cache hits.
+- **Wide terminal**: where you run commands
+- **Narrow terminal**: tailing `gh run watch` so the room sees CI light up
 
-### 0. Get a fresh shell
-
-```bash
-cd /Users/radupopa/p/radu/random-code/cdktf-demo
-direnv allow      # or: nix develop
-aws sts get-caller-identity --profile radupopa   # confirm fresh AWS session
-```
-
-### 1. Tier-01 (VPC) — ~3 min
+Pre-warm the Cachix cache from your laptop so the `app-build` job in CI is visibly fast on the demo:
 
 ```bash
-gh workflow run tier-01-environments.yml
-gh run watch
-```
-
-✅ when green and the cdktf step shows `Apply complete! Resources: ~24 added`.
-
-### 2. Tier-02 (EKS + ECR + secret shells) — ~20 min ☕
-
-```bash
-gh workflow run tier-02-clusters.yml
-gh run watch
-```
-
-EKS control plane = ~12 min, node group = ~5 min. Verify when done:
-
-```bash
-aws eks update-kubeconfig --profile radupopa --region eu-central-1 --name cdktf-demo-devnet
-kubectl get nodes                                    # 1 t3.small, Ready
-aws secretsmanager describe-secret --profile radupopa \
-  --secret-id cdktf-demo/devnet/cachix-radupopa2010-token   # shell exists, no value
-```
-
-### 3. Put the Cachix push token in Secrets Manager
-
-```bash
-./scripts/bootstrap-secrets.sh
-# Paste the token from https://app.cachix.org/personal-auth-tokens
-# (cache: radupopa2010, scope: write).
-```
-
-This is the only time you ever interactively type a secret value. From here on, CI loads it via `aws secretsmanager get-secret-value` after the OIDC step.
-
-### 4. Refresh the LBC IAM policy + Tier-03 (LBC) — ~5 min
-
-```bash
-./scripts/refresh-lbc-policy.sh
-git add tier-03-cdktf-internal-tools/modules/kubernetes-aws-load-balancer-controller/iam-policy.json
-git commit -m "tier-03: refresh LBC IAM policy"
-git push
-gh workflow run tier-03-internal-tools.yml
-gh run watch
-```
-
-✅ when `kubectl get pods -n kube-system | grep aws-load-balancer-controller` shows 2 pods Running.
-
-### 5. Pre-warm Cachix (the demo magic happens here)
-
-This step is what makes tomorrow's CI build *fast*. Build the image locally now and push every transitive dep to Cachix; CI will fetch instead of compiling.
-
-```bash
-cachix authtoken <your-personal-token>
 nix build .#rust-demo .#rust-demo-image --print-out-paths \
   | cachix push radupopa2010
 ```
 
-(This can run while tier-02 is still cooking.)
+(Requires `cachix authtoken <your-token>` once. The token is the same one stored in AWS Secrets Manager for CI.)
 
-### 6. Cut v0.1.0 — full pipeline runs
+Save the ALB hostname so you don't have to derive it live:
 
 ```bash
-git tag -a v0.1.0 -m "first cdktf-demo release"
-git push origin v0.1.0
-gh release create v0.1.0 --generate-notes
-gh run watch
+ALB=$(aws elbv2 describe-load-balancers \
+  --profile radupopa --region eu-central-1 \
+  --query 'LoadBalancers[?contains(LoadBalancerName, `k8s-rustdemo`)].DNSName' \
+  --output text)
+echo "$ALB"
 ```
 
-`app-release.yml` chains: `resolve-tag → app-build → tier-04 deploy → smoke-test`. The `smoke-test` job at the end runs `./scripts/smoke-test.sh v0.1.0` and writes the live JSON to `$GITHUB_STEP_SUMMARY` — that summary is your "tonight worked" receipt.
+## The 9 beats
 
-### 7. Final manual confirm
+### Beat 0 — "Here's what's live" (15 s)
 
 ```bash
-ALB=$(kubectl get ing rust-demo -n rust-demo \
-  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-echo "ALB: http://$ALB"
 curl "http://$ALB/version"
-# → {"version":"0.1.0","commit":"<sha>"}
+# → {"version":"0.1.X","commit":"<sha>"}
 ```
 
-Save that ALB hostname for tomorrow (or just re-derive it from `kubectl`).
+> "This is the version EKS is serving right now. We're going to bump it and watch the pipeline put a new one up — without anyone touching kubectl, terraform, or AWS."
 
-**State you'll wake up to:** devnet running v0.1.0, ALB green, Cachix populated, no GitHub secrets, all CI jobs green.
-
----
-
-## Tomorrow — the demo (≈ 8 min)
-
-Tight script. Each beat states what you're showing and why it matters. Have two terminals open: a wide one for commands, a smaller one tailing `gh run watch`.
-
-### Beat 0 — "Here's what's live" (15s)
-
-```bash
-ALB=$(kubectl get ing rust-demo -n rust-demo -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-curl "http://$ALB/version"
-# → {"version":"0.1.0","commit":"<sha>"}
-```
-
-> "This is what was deployed last night. We're going to bump it and watch the pipeline put a new version up."
-
-### Beat 1 — Bump the version (20s)
+### Beat 1 — Bump the version (20 s)
 
 ```bash
 $EDITOR app/Cargo.toml
-# Change version = "0.1.0" → "0.1.1"
+# version = "0.1.X" → "0.1.(X+1)"
 ```
 
-Show the one-line diff in the editor.
+Show the one-line diff in the editor. Then refresh the lockfile (deterministic, fast):
 
-### Beat 2 — Build + validate locally with Nix (30s, fast because Cachix)
+```bash
+(cd app && cargo update --offline -p rust-demo)
+```
+
+### Beat 2 — Build + validate locally with Nix (30 s)
 
 ```bash
 ./scripts/dev-up.sh
-# nix build .#rust-demo (mostly cache hits)
-# starts the binary, polls /health, asserts /version == 0.1.1
 ```
 
-> "30 seconds to build because Cachix already has every dep. The script asserts the new version actually serves — no need to push to find out it's broken."
+What happens, narrated:
+
+- `nix build .#rust-demo` — only the binary recompiles; every Rust dep comes from Cachix
+- Starts the binary on `:8080`, polls `/health`, asserts `/version` matches `Cargo.toml`
+- Built in ~30 s on a warm cache
+
+> "30 seconds because Cachix already has every dependency. No need to push to find out it's broken."
 
 ```bash
 ./scripts/dev-down.sh
 ```
 
-### Beat 3 — Open + merge a PR (45s)
+### Beat 3 — PR + merge (45 s)
 
 ```bash
-git checkout -b bump-to-0.1.1
-git commit -am "app: bump to 0.1.1"
-git push -u origin bump-to-0.1.1
+git checkout -b bump-to-0.1.X
+git commit -am "app: bump to 0.1.X"
+git push -u origin bump-to-0.1.X
 gh pr create --fill
-# (optional: show that no tier workflow fires for an app-only change)
 gh pr merge --squash --delete-branch
 ```
 
-### Beat 4 — Cut the release (20s)
+> "Notice no tier workflow fired on push or merge — only app-only paths changed, the per-tier `paths:` filters didn't match. Releases are how you deploy."
+
+### Beat 4 — Cut the release (20 s)
 
 ```bash
 git checkout main && git pull
-git tag -a v0.1.1 -m "0.1.1: just the version, that's the point"
-git push origin v0.1.1
-gh release create v0.1.1 --generate-notes
+git tag -a v0.1.X -m "v0.1.X"
+git push origin v0.1.X
+gh release create v0.1.X --generate-notes
 gh run watch
 ```
 
-> "From here, GitHub Actions does everything. No human in the loop."
+> "From here, GitHub Actions does everything. Zero humans in the loop."
 
-### Beat 5 — Watch CI use the cache (1-2 min)
+### Beat 5 — Watch CI use the cache (1–2 min)
 
-While the workflow runs, point at the `app-build` job's logs. Grep mentally for:
+In the narrow terminal, `gh run watch` shows `app-release` light up:
+
+1. `resolve-tag` — extracts `v0.1.X` (~3 s)
+2. `build` — `nix build .#rust-demo-image` + `docker push` to ECR
+
+Open the build job's log and grep mentally for:
 
 ```text
 copying path '/nix/store/...' from 'https://radupopa2010.cachix.org'
 ```
 
-> "Two punchlines on this screen: there are zero secrets in this repo's GitHub config — auth is OIDC. And every Rust dep is coming from the Cachix cache, not being recompiled. Same artifact CI built last night, same store path."
+> "Two punchlines on this screen. One: there are zero secrets in this repo's GitHub config — auth is OIDC, the Cachix token comes from AWS Secrets Manager. Two: every Rust dep is being pulled from cache, not recompiled. The build is the same Nix derivation we ran on my laptop 90 seconds ago."
 
-### Beat 6 — Watch CI deploy (2-3 min)
+### Beat 6 — CI deploys (2–3 min)
 
-`tier-04-applications` runs `cdktf deploy` with `image_tag=v0.1.1`. Helm release lands, ALB rolls.
+`tier-04-applications` calls the reusable `_shared-cdktf-tier.yml`. `cdktf deploy devnet --var=image_tag=v0.1.X`. Helm release rolls out, AWS LBC updates target groups.
 
-### Beat 7 — CI auto-validates with smoke-test
+### Beat 7 — CI auto-validates with `smoke-test`
 
-The final `smoke-test` job runs `./scripts/smoke-test.sh v0.1.1`. Expand its summary on the workflow run page — green ✅ box with the live JSON.
+Final job: `aws eks update-kubeconfig`, then `./scripts/smoke-test.sh v0.1.X`. Polls the live ALB until `/version` equals the released tag. The Step Summary on the run page shows the live JSON in a fenced code block — point at the green ✅.
 
-### Beat 8 — Confirm from your laptop (10s)
+### Beat 8 — Confirm from your laptop (10 s)
 
 ```bash
 curl "http://$ALB/version"
-# → {"version":"0.1.1","commit":"<new-sha>"}
+# → {"version":"0.1.X","commit":"<new-sha>"}
 ```
 
-### Beat 9 (bonus, if there's time) — "And here's the exact ECR bytes on my laptop"
+### Beat 9 (bonus) — "And here's the exact ECR bytes on my laptop" (30 s)
 
 ```bash
-./scripts/dev-pull.sh v0.1.1
-# logs into ECR, pulls the image CI just pushed, runs it under Docker
-# (Rosetta on Apple Silicon), curls /version → 0.1.1
+./scripts/dev-pull.sh v0.1.X
 ```
 
-> "The bits running here are the bits CI pushed to ECR are the bits EKS pulled. Nix made all three of them the same artifact."
+Pulls the v0.1.X image from ECR, runs it under Docker (Rosetta on Apple Silicon), curls `/version`.
 
----
+> "The bits running here came from CI minutes ago. Bit-identical to what EKS is pulling. Nix made all three of them the same artifact."
 
-## After the demo — tear down (saves money)
+## After the demo
+
+Optional bump-and-rollback to show the pipeline in reverse:
+
+```bash
+git revert HEAD --no-edit
+git push
+git tag -a v0.1.(X-1)-revert -m "rollback"
+git push origin v0.1.(X-1)-revert
+gh release create v0.1.(X-1)-revert --generate-notes
+```
+
+Or save money by tearing devnet down for the night:
 
 ```bash
 ./scripts/destroy-all.sh
-# Reverse tier order: tier-04 → tier-03 → tier-02 → tier-01.
-# Safe to re-run; failures don't cascade (set +e per tier).
 ```
 
-Or just `kubectl delete ns rust-demo` if you want to keep the cluster running for next time.
+(Cluster destroy takes ~10 min. NAT + EKS together cost ~$3/day if left up.)
 
----
-
-## Quick reference — the key commands
+## Quick reference
 
 ```bash
-# Validation
-./scripts/dev-up.sh                  # local build + run + assert version (native)
-./scripts/dev-up.sh --container      # same, in docker (needs Linux host or linux-builder)
-./scripts/dev-pull.sh v0.1.1         # pull-and-run the exact ECR image
-./scripts/smoke-test.sh v0.1.1       # poll live ALB until /version matches
+# Local validation
+./scripts/dev-up.sh                  # nix build + run native + assert version
+./scripts/dev-up.sh --container      # OCI image via docker (Linux host or linux-builder)
+./scripts/dev-pull.sh v0.1.X         # pull-and-run the exact ECR image
+
+# Cloud validation (kubectl required)
+./scripts/smoke-test.sh v0.1.X
 
 # Multi-arch local build (requires linux-builder on macOS)
-./scripts/dev-build-multi.sh         # builds linux/amd64 + linux/arm64
+./scripts/dev-build-multi.sh
 
 # Operations
-gh workflow run tier-01-environments.yml
+gh workflow run tier-XX-...yml
 gh workflow run deploy-all.yml -f confirm=devnet
 gh release create v0.1.X --generate-notes
 ./scripts/destroy-all.sh
 ```
+
+## Troubleshooting on stage
+
+| Symptom | Likely cause | Quick fix |
+|---|---|---|
+| `dev-up.sh` says "version mismatch" | Forgot `cargo update` after bumping `Cargo.toml` | `(cd app && cargo update --offline -p rust-demo)` |
+| `gh release create` fires no workflow | Tag already existed, GH ignored the duplicate trigger | Delete release + re-create: `gh release delete vX.Y.Z --yes && gh release create vX.Y.Z --generate-notes` |
+| Smoke-test times out polling ALB | Two `app-release` runs raced for the state lock | Check `gh run list --status in_progress` — should be one. If two, kill the duplicate (concurrency should prevent this) |
+| `/version` returns the old version after CI green | cdktf var flag wrong (`-var` vs `--var=`) | Already fixed in `tier-04-applications.yml`; if it recurs, check the `extra_vars:` line |
+| ALB DNS doesn't resolve | New release is mid-rollout, old ALB DNS may not be updated yet | Re-derive: `aws elbv2 describe-load-balancers ... --query '...DNSName'` |
