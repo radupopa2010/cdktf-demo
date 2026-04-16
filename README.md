@@ -26,6 +26,90 @@ A small but realistic demo of the multi-tier CDKTF pattern I used in the past, s
 </details>
 
 <details>
+<summary><b>Workflow execution model — what runs in what order</b></summary>
+
+The Actions sidebar lists workflows alphabetically (`app-build`, `app-release`, `deploy-all`, then the tiers). That's *not* the execution order. The real relationships are by `uses:` (reusable invocation) and `needs:` (job dependency). There are seven workflow files split into three groups:
+
+```text
+┌─ REUSABLE — only invoked via workflow_call, never directly
+│   _shared-cdktf-tier.yml         plan + apply for one cdktf tier
+│   app-build.yml                  nix build + cachix push + ECR push
+│
+├─ PER-TIER — each is a thin wrapper around _shared-cdktf-tier.yml
+│   tier-01-environments.yml       VPC tier
+│   tier-02-clusters.yml           EKS + ECR + Secrets Manager
+│   tier-03-internal-tools.yml     LBC + cert-manager
+│   tier-04-applications.yml       Helm release of rust-demo
+│
+└─ TOP-LEVEL ORCHESTRATORS — what humans actually trigger
+    deploy-all.yml                 manual, full infra provision
+    app-release.yml                release-driven, app-only redeploy
+```
+
+Two distinct flows in practice:
+
+### Flow A — Infrastructure deploy (rare)
+
+```text
+gh workflow run deploy-all.yml -f confirm=devnet
+       │
+       ▼
+deploy-all.yml
+  ├─► tier-01-environments.yml ──uses──► _shared-cdktf-tier.yml  (~3 min, VPC)
+  │       │ needs:
+  ├─► tier-02-clusters.yml      ──uses──► _shared-cdktf-tier.yml  (~20 min, EKS)
+  │       │ needs:
+  ├─► tier-03-internal-tools.yml──uses──► _shared-cdktf-tier.yml  (~3 min, LBC)
+  │       │ needs:
+  └─► tier-04-applications.yml  ──uses──► _shared-cdktf-tier.yml  (~3 min, Helm)
+```
+
+`deploy-all` chains them with `needs:` so they run **strictly sequentially** — each tier reads remote state from lower tiers, so order matters. Total wall time: ~30 min from cold.
+
+You can also run any tier individually (`gh workflow run tier-XX-...yml`) or push code matching a tier's `paths:` filter — but you're responsible for ordering.
+
+### Flow B — App release (normal cadence)
+
+```text
+git tag vX.Y.Z && gh release create vX.Y.Z --generate-notes
+       │
+       │ release.published event
+       ▼
+app-release.yml
+  ├─► resolve-tag                     extracts vX.Y.Z (~3 s)
+  │       │ needs:
+  ├─► build ──uses──► app-build.yml
+  │       │              ├─ nix build .#rust-demo-image (Cachix-backed)
+  │       │              └─ docker tag + push to ECR (vX.Y.Z + latest)
+  │       │ needs:
+  ├─► deploy ──uses──► tier-04-applications.yml ──uses──► _shared-cdktf-tier.yml
+  │       │              └─ cdktf deploy devnet --var=image_tag=vX.Y.Z
+  │       │                 (Helm release rolls; LBC updates targets)
+  │       │ needs:
+  └─► smoke-test                      kubectl + curl /version, asserts vX.Y.Z is live
+```
+
+Total wall time: ~5–8 min on a warm Cachix cache. Tiers 01/02/03 are not touched.
+
+### What auto-fires from a `git push`?
+
+Per-tier workflows have `push: branches: [main], paths: [<tier-dir>/**]` so changing infra code redeploys *only* that tier. Changing `app/`-only files triggers nothing — those go through the release flow. `deploy-all.yml` and `app-release.yml` never auto-fire from push.
+
+### Mental model
+
+- **`_shared-cdktf-tier.yml`** is the engine. It knows how to run `cdktf` safely (auth via OIDC, install Terraform, derive the state-backend names, hold the per-env concurrency lock, log to artifacts).
+- The **four `tier-XX-...yml`** files are 30-line wrappers that say *"my code is here, please plan+apply stack `devnet`."* They exist so each tier can have its own triggers + path filter.
+- **`app-build.yml`** is the sibling engine for the Nix → ECR side of the world.
+- **`deploy-all.yml`** is the manual *"spin up everything"* button.
+- **`app-release.yml`** is the automated *"ship a new app version"* pipe.
+
+### One subtle gotcha — `release.published` reads its workflow YAML from the *tag's* commit
+
+When `gh release create vX.Y.Z` fires `app-release.yml`, the workflow file used is the one in the repo at the **tag's ref**, not at `main` HEAD. So if you push a fix to the workflow YAML, then tag at an older commit, the fix won't take effect for that release. Always tag at HEAD (or after the workflow fix is merged) — or move the tag forward (`git tag -f` + `git push -f origin <tag>`) if you need to re-release.
+
+</details>
+
+<details>
 <summary><b>Architecture overview</b></summary>
 
 ```text
