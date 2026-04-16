@@ -96,9 +96,27 @@ permissions:
   id-token: write
   contents: read
 
+# Silence the "Node.js 20 actions are deprecated" warning by pinning runners
+# to Node 24 for the JavaScript-based actions used here. Same env applies to
+# every reusable invocation.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   plan-and-apply:
     runs-on: ubuntu-latest
+
+    # Serialise every CDKTF/Terraform run that touches the same environment's
+    # state. Without this, two concurrent runs (e.g. tag-push + release-published
+    # firing app-release.yml twice, or push-to-main racing a manual dispatch)
+    # both try to acquire the DynamoDB state lock and one fails outright.
+    # `cancel-in-progress: false` queues the second run instead of killing
+    # the first — important: never abort a deploy mid-flight, you'll leave
+    # state inconsistent. Group key matches Movement's convention.
+    concurrency:
+      group: terraform-${{ inputs.stack }}
+      cancel-in-progress: false
+
     defaults:
       run:
         working-directory: ${{ inputs.tier_dir }}

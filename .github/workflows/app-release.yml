@@ -1,8 +1,10 @@
 name: app-release
 
-# Triggered when:
-#   - A GitHub release is published, OR
-#   - A `v*` git tag is pushed (release-from-tag flow).
+# Triggered ONLY when a GitHub release is published. We deliberately do NOT
+# also trigger on `push: tags v*` even though that's a common pattern —
+# `gh release create vX.Y.Z` (or the GitHub UI) pushes the tag *and* fires
+# release.published, so listening to both means two parallel runs racing
+# for the tier-04 state lock. One trigger = one pipeline.
 #
 # Pipeline: resolve-tag → build (Nix + Cachix) → deploy (tier-04 cdktf) →
 #           smoke-test (curl /version against the live ALB).
@@ -10,12 +12,20 @@ name: app-release
 on:
   release:
     types: [published]
-  push:
-    tags: ["v*"]
 
 permissions:
   id-token: write
   contents: read
+
+# Belt-and-braces: even if a future trigger adds a second event, only one
+# release pipeline should be in flight at a time. cancel-in-progress=false
+# queues; never abort a deploy mid-flight.
+concurrency:
+  group: app-release
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   resolve-tag:
