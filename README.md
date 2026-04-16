@@ -15,7 +15,7 @@ A small but realistic demo of the multi-tier CDKTF pattern I used in the past, s
 ├── flake.nix                        # Reproducible Rust toolchain + OCI image, Cachix-cached
 ├── .github/workflows/               # One workflow per tier + orchestrator + app-release
 ├── scripts/                         # Bootstrap + deploy-all + destroy-all helpers
-├── minikube/                        # Laptop-local k8s flow (no AWS)
+├── scripts/dev-up.sh                # Build OCI image with Nix + run via docker compose
 └── .claude/skills/                  # Per-tier AI skills + cdktf safety + workflow trigger
 ```
 
@@ -370,21 +370,38 @@ curl "http://$ALB/version"   # → {"version":"0.1.1","commit":"<sha>"}
 curl -I "http://$ALB/health" # → 200 OK
 ```
 
-## Local development
+## Local ↔ cloud parity (the validation flow)
 
-### App-only (Docker Compose, no Kubernetes)
+The whole point of Nix + Cachix in this demo is that **the OCI image you run on your laptop is bit-identical to what CI pushes to ECR and EKS pulls** (modulo CPU arch on Apple Silicon — see note below). One script ties it together:
 
 ```bash
-cd app
-docker compose up --build
-curl localhost:8080/version
+./scripts/dev-up.sh
 ```
 
-### Full stack on Kubernetes (Minikube)
+What it does:
 
-See [`minikube/README.md`](./minikube/README.md).
+1. `nix build .#rust-demo-image` — Cachix-backed; cold ~5 min, warm ~30 s.
+2. `docker load < result` — loads the Nix-produced tarball as `rust-demo:latest` in your local Docker daemon.
+3. `docker compose -f app/docker-compose.yml up -d` — starts a container from that exact image (compose has `pull_policy: never`, never reaches for a registry).
+4. Polls `localhost:8080/health` until 200.
+5. `curl localhost:8080/version` and asserts the response matches the version in `app/Cargo.toml`.
+6. Prints the Nix store path so you can compare it to the one CI logs.
 
-### Build via Nix + Cachix (the demo)
+Tear down with `./scripts/dev-down.sh`.
+
+### Validating after a cloud deploy
+
+```bash
+./scripts/smoke-test.sh v0.1.1
+```
+
+Polls the live ALB until `/version` returns the expected tag, then prints the JSON. Used by CI in the `app-release.yml` workflow's `smoke-test` job — same script, same exit codes, same output. If green in CI, green from your laptop.
+
+### Apple Silicon caveat
+
+`dockerTools.buildLayeredImage` builds for the host architecture. On an M-series Mac you'll get an arm64 image; CI builds amd64. The binaries differ in CPU instructions but every other input (toolchain, deps, Cargo.lock, source tree) is identical — same Nix derivation hash for everything except the system tag. To get bit-for-bit parity locally, build with `--system x86_64-linux` (uses Rosetta or qemu, slow). Worth it only if you're chasing an arch-specific bug.
+
+### Build directly via Nix + Cachix (no container)
 
 ```bash
 # As a reader — pull from cache, no compile

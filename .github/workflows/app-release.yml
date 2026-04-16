@@ -4,7 +4,8 @@ name: app-release
 #   - A GitHub release is published, OR
 #   - A `v*` git tag is pushed (release-from-tag flow).
 #
-# Builds the image with the tag, then deploys tier-04 with the new tag.
+# Pipeline: resolve-tag → build (Nix + Cachix) → deploy (tier-04 cdktf) →
+#           smoke-test (curl /version against the live ALB).
 
 on:
   release:
@@ -43,3 +44,37 @@ jobs:
     with:
       image_tag: ${{ needs.resolve-tag.outputs.image_tag }}
       apply: true
+
+  smoke-test:
+    needs: [resolve-tag, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig for cdktf-demo-devnet
+        run: |
+          aws eks update-kubeconfig \
+            --name cdktf-demo-devnet \
+            --region ${{ vars.AWS_REGION }}
+
+      - name: Smoke-test live deployment
+        env:
+          EXPECTED: ${{ needs.resolve-tag.outputs.image_tag }}
+        run: |
+          ./scripts/smoke-test.sh "$EXPECTED" | tee live-version.log
+          {
+            echo "## Live deployment verified"
+            echo ""
+            echo '```'
+            cat live-version.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

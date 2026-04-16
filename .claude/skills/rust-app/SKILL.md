@@ -1,6 +1,6 @@
 ---
 name: rust-app
-description: Build, run, and release the rust-demo axum app. Covers Nix build, Cachix usage, semver bumping, and the docker-compose / minikube local flows.
+description: Build, run, and release the rust-demo axum app. Covers Nix build, Cachix usage, semver bumping, the docker-compose-based local validation flow, and the smoke-test against the cloud deployment.
 ---
 
 ## What the app does
@@ -79,21 +79,27 @@ That's the demo: **same artifact, no rebuild.**
 
 5. `app-release.yml` builds the image, pushes to ECR as `vX.Y.Z` + `latest`, then dispatches tier-04 with `image_tag=vX.Y.Z`.
 
-## Local: docker-compose (app folk)
+## Local validation: dev-up.sh (Nix → Docker)
+
+The whole point of the local flow is to prove "what runs here is what will run in EKS". The `app/docker-compose.yml` consumes the Nix-built OCI image (it does NOT rebuild from a Dockerfile — that would defeat the parity guarantee).
 
 ```bash
-cd app
-docker compose up --build
-curl localhost:8080/version
+./scripts/dev-up.sh        # nix build → docker load → up → curl /version → assert
+./scripts/dev-down.sh      # tear down the container
 ```
 
-## Local: minikube (infra folk)
+What the script asserts: the version returned by `/version` matches the version in `app/Cargo.toml`. If it doesn't, you forgot to rebuild after bumping (or the cache returned a stale path — unlikely with crane's input hashing).
+
+## Cloud validation: smoke-test.sh
+
+Same idea, against the live ALB. CI's `app-release` workflow runs this as its final job; you can also run it from your laptop:
 
 ```bash
-./minikube/start.sh                      # boots minikube + ingress addon
-kubectl apply -k minikube/manifests/     # bare manifests of the rust-demo
-minikube service rust-demo --url         # opens a tunnel
+aws eks update-kubeconfig --name cdktf-demo-devnet --region eu-central-1
+./scripts/smoke-test.sh v0.1.1   # polls /version until it == 0.1.1
 ```
+
+Exits non-zero if the version never matches — useful in CI's required-checks list.
 
 ## Common issues
 

@@ -1,21 +1,19 @@
+# Local validation harness for the rust-demo image.
+#
+# Consumes the OCI image produced by `nix build .#rust-demo-image` (loaded
+# into the local Docker daemon by `scripts/dev-up.sh`). NOT a from-source
+# build — that would defeat the "same artifact local and cloud" guarantee.
+#
+# Usage:
+#   ./scripts/dev-up.sh            # build with Nix, load, run, curl
+#   ./scripts/dev-down.sh          # tear down
 services:
   rust-demo:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM rust:1.79 AS build
-        WORKDIR /src
-        COPY Cargo.toml Cargo.lock ./
-        COPY src ./src
-        ARG GIT_COMMIT=local-dev
-        ENV GIT_COMMIT=${GIT_COMMIT}
-        RUN cargo build --release
-        FROM debian:bookworm-slim
-        RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-        COPY --from=build /src/target/release/rust-demo /usr/local/bin/rust-demo
-        EXPOSE 8080
-        ENTRYPOINT ["/usr/local/bin/rust-demo"]
+    image: rust-demo:latest        # populated by `docker load < result`
+    pull_policy: never             # never reach for a registry; image is local
     ports:
       - "8080:8080"
     environment:
       RUST_LOG: info
+    # No healthcheck inside the container — the image is intentionally minimal
+    # (no shell, no curl/wget). dev-up.sh polls /health from the host instead.
