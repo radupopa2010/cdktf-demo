@@ -22,14 +22,16 @@ ING="${RUST_DEMO_INGRESS:-rust-demo}"
 CYAN="\033[0;36m"; GREEN="\033[0;32m"; YELLOW="\033[0;33m"; RED="\033[0;31m"; RESET="\033[0m"
 
 # ── 1. Resolve ALB hostname (Ingress is provisioned by AWS LB Controller) ──
+# AWS LBC provisions the ALB ~3 min after the Ingress lands; the
+# DNS record then propagates for another 1-2 min. Poll up to 12 min total.
 printf "${CYAN}==>${RESET} Resolving ALB hostname for Ingress %s/%s\n" "$NS" "$ING"
 ALB=""
-for i in $(seq 1 30); do
+for i in $(seq 1 60); do
   ALB=$(kubectl get ing "$ING" -n "$NS" \
     -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
   if [ -n "$ALB" ]; then break; fi
-  printf "    waiting for ALB hostname (%d/30)\n" "$i"
-  sleep 10
+  printf "    waiting for ALB hostname (%d/60)\n" "$i"
+  sleep 12
 done
 
 if [ -z "$ALB" ]; then

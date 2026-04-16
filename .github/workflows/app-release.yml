@@ -69,12 +69,16 @@ jobs:
       - name: Smoke-test live deployment
         env:
           EXPECTED: ${{ needs.resolve-tag.outputs.image_tag }}
+        shell: bash
         run: |
-          ./scripts/smoke-test.sh "$EXPECTED" | tee live-version.log
+          set -eo pipefail
+          # Run smoke-test; capture output to file AND show it live.
+          # If the script exits non-zero, set -e will fail the step.
+          ./scripts/smoke-test.sh "$EXPECTED" 2>&1 | tee live-version.log
           {
             echo "## Live deployment verified"
             echo ""
             echo '```'
-            cat live-version.log
+            tail -n 20 live-version.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
