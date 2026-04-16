@@ -44,14 +44,29 @@ jobs:
         with:
           node-version: "20"
 
+      # cdktf shells out to terraform; the GitHub-hosted runner doesn't
+      # ship it by default, so install it explicitly. Pin to the same
+      # major as the providers we generate against.
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
+      - name: Verify AWS identity + compute state backend names
+        id: aws
+        run: |
+          aws sts get-caller-identity
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "CDKTF_STATE_BUCKET=cdktf-demo-tfstate-${ACCOUNT_ID}" >> "$GITHUB_ENV"
+          echo "CDKTF_STATE_LOCK_TABLE=cdktf-demo-tfstate-lock"   >> "$GITHUB_ENV"
+          echo "Using bucket=cdktf-demo-tfstate-${ACCOUNT_ID}, lock-table=cdktf-demo-tfstate-lock"
 
       - name: Install CDKTF + project deps
         run: |
