@@ -12,8 +12,6 @@ on:
     branches: [main]
     paths:
       - "tier-01-cdktf-environments/**"
-      - ".github/workflows/infra-tier-01-environments.yml"
-      - ".github/workflows/_infra-shared-cdktf-tier.yml"
   workflow_call:
     inputs:
       apply:
@@ -27,7 +25,6 @@ permissions:
 
 jobs:
   deploy:
-    uses: ./.github/workflows/_infra-shared-cdktf-tier.yml
     with:
       tier_dir: tier-01-cdktf-environments
       stack: devnet
