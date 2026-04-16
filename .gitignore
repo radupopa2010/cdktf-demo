@@ -50,6 +50,9 @@ Thumbs.db
 *.key
 secrets.json
 
+# dev-up.sh PID tracker (killed by dev-down.sh)
+.dev-up.pid
+
 # Local-only AI workflow artifacts (not part of the project itself)
 plan.md
 tasks.md
