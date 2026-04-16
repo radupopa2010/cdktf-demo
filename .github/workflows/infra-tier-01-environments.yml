@@ -25,6 +25,7 @@ permissions:
 
 jobs:
   deploy:
+    uses: ./.github/workflows/_infra-shared-cdktf-tier.yml
     with:
       tier_dir: tier-01-cdktf-environments
       stack: devnet
