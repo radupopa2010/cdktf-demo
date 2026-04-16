@@ -17,7 +17,8 @@ set -euo pipefail
 EXPECTED="${1:?usage: smoke-test.sh <expected-version (e.g. v0.1.1)>}"
 EXPECTED="${EXPECTED#v}"   # strip leading v
 NS="${RUST_DEMO_NAMESPACE:-rust-demo}"
-ING="${RUST_DEMO_INGRESS:-rust-demo}"
+# Helm names the Ingress <release>-<chart> = rust-demo-rust-demo by default.
+ING="${RUST_DEMO_INGRESS:-rust-demo-rust-demo}"
 
 CYAN="\033[0;36m"; GREEN="\033[0;32m"; YELLOW="\033[0;33m"; RED="\033[0;31m"; RESET="\033[0m"
 

@@ -11,14 +11,20 @@ Open two terminals:
 - **Wide terminal**: where you run commands
 - **Narrow terminal**: tailing `gh run watch` so the room sees CI light up
 
-Pre-warm the Cachix cache from your laptop so the `app-build` job in CI is visibly fast on the demo:
+Configure the local Cachix CLI with the same push token CI uses (sourced from AWS Secrets Manager — no token typed or pasted):
+
+```bash
+cachix authtoken "$(aws secretsmanager get-secret-value --profile radupopa \
+  --region eu-central-1 --secret-id cdktf-demo/devnet/cachix-radupopa2010-token \
+  --query SecretString --output text)"
+```
+
+Pre-warm the Cachix cache so the `app-build` job in CI is visibly fast:
 
 ```bash
 nix build .#rust-demo .#rust-demo-image --print-out-paths \
   | cachix push radupopa2010
 ```
-
-(Requires `cachix authtoken <your-token>` once. The token is the same one stored in AWS Secrets Manager for CI.)
 
 Save the ALB hostname so you don't have to derive it live:
 
