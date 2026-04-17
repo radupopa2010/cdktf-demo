@@ -11,7 +11,23 @@ Open two terminals:
 - **Wide terminal**: where you run commands
 - **Narrow terminal**: tailing `gh run watch` so the room sees CI light up
 
-Configure the local Cachix CLI with the same push token CI uses (sourced from AWS Secrets Manager — no token typed or pasted):
+### 1. Activate the dev environment
+
+```bash
+cd /Users/radupopa/p/radu/random-code/cdktf-demo
+direnv allow
+```
+
+This loads the `.envrc` which enters the Nix devshell, exports AWS SSO credentials (terraform 1.14+ needs explicit STS creds), and sets the state backend env vars. If you don't use direnv, run manually:
+
+```bash
+aws sso login --profile radupopa
+eval "$(aws configure export-credentials --profile radupopa --format env)"
+export CDKTF_STATE_BUCKET="cdktf-demo-tfstate-228228360871"
+export CDKTF_STATE_LOCK_TABLE="cdktf-demo-tfstate-lock"
+```
+
+### 2. Configure Cachix CLI (one-time, token from AWS Secrets Manager)
 
 ```bash
 cachix authtoken "$(aws secretsmanager get-secret-value --profile radupopa \
@@ -19,14 +35,7 @@ cachix authtoken "$(aws secretsmanager get-secret-value --profile radupopa \
   --query SecretString --output text)"
 ```
 
-Pre-warm the Cachix cache so the `app-build` job in CI is visibly fast:
-
-```bash
-nix build .#rust-demo .#rust-demo-image --print-out-paths \
-  | cachix push radupopa2010
-```
-
-Save the ALB hostname so you don't have to derive it live:
+### 3. Save the ALB hostname
 
 ```bash
 ALB=$(aws elbv2 describe-load-balancers \
@@ -100,7 +109,7 @@ gh release create v0.1.X --generate-notes
 gh run watch
 ```
 
-> "From here, GitHub Actions does everything. Zero humans in the loop."
+> "From here, GitHub Actions does everything. Zero humans in the loop for devnet"
 
 ### Beat 4 — Watch CI use the cache (1–2 min)
 

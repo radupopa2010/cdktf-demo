@@ -76,8 +76,12 @@ git tag vX.Y.Z && gh release create vX.Y.Z --generate-notes
 app-release.yml
   ├─► resolve-tag                     extracts vX.Y.Z (~3 s)
   │       │ needs:
-  ├─► build ──uses──► app-build.yml
-  │       │              ├─ nix build .#rust-demo-image (Cachix-backed)
+  ├─► validate-mac ──uses──► app-build.yml (macos-latest)
+  │       │              ├─ nix build .#rust-demo (cache hit from local push!)
+  │       │              └─ nix build .#rust-demo-image-amd64 (zig cross-compile)
+  │       │ needs:
+  ├─► build ──uses──► app-build.yml (ubuntu-latest)
+  │       │              ├─ nix build .#rust-demo-image (native x86_64)
   │       │              └─ docker tag + push to ECR (vX.Y.Z + latest)
   │       │ needs:
   ├─► deploy ──uses──► infra-tier-04-applications.yml ──uses──► _infra-shared-cdktf-tier.yml
