@@ -33,7 +33,53 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # macOS runner — same arch as the dev laptop (aarch64-darwin). Local
+  # `cachix push` feeds this job directly: same system, same pkgs, same
+  # derivation hashes → full cache hit. Also cross-compiles the amd64
+  # image via zig-cc so the artifact is validated before the Linux job.
+  validate-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Load Cachix auth token from AWS Secrets Manager
+        run: |
+          TOKEN=$(aws secretsmanager get-secret-value \
+            --secret-id cdktf-demo/devnet/cachix-radupopa2010-token \
+            --query SecretString --output text)
+          echo "::add-mask::$TOKEN"
+          echo "CACHIX_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Configure Cachix (push enabled)
+        uses: cachix/cachix-action@v17
+        with:
+          name: ${{ vars.CACHIX_CACHE_NAME }}
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+
+      - name: Build native binary (cache hit from local dev push)
+        run: nix build .#rust-demo --print-build-logs
+
+      - name: Cross-compile amd64 image via zig-cc
+        run: nix build .#rust-demo-image-amd64 --print-build-logs
+
+  # Linux runner — builds the native x86_64 OCI image and pushes to ECR.
+  # Cache comes from previous CI runs (same system). Does NOT benefit
+  # from local Mac pushes (different arch).
   build:
+    needs: validate-mac
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.push.outputs.image }}

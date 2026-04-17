@@ -87,6 +87,22 @@ On Apple Silicon, `nix build .#rust-demo-image` produces an arm64-darwin image. 
 
 `flake-utils.lib.eachDefaultSystem` creates per-system outputs but `nix build .#rust-demo` resolves to the current host's system only. To build for a different system (e.g., x86_64-linux from aarch64-darwin), you need a remote builder or `extra-platforms` configured.
 
+## Nix caching strategy
+
+### 19a. Cargo.toml version bump = full Nix rebuild (by design)
+
+Changing `version = "0.1.6"` → `"0.1.7"` in Cargo.toml changes the source hash → crane's `buildDepsOnly` derivation gets a new hash → all 67 crates recompile (~60s). This is Nix's input-hashing model: same inputs = same hash, different inputs = different derivation.
+
+**Current approach:** accept the ~60s rebuild. Version lives in Cargo.toml (standard Rust). CI→CI caching handles the rest.
+
+**Alternative for maximum cache efficiency (not used here):** freeze Cargo.toml at `version = "0.1.0"` forever, inject version via `APP_VERSION` env var at build time (`option_env!("APP_VERSION")` in main.rs). The deps derivation hash never changes → only the app binary recompiles (~4s). Downside: requires `--impure` flag (breaks `nix flake check`), non-standard Cargo practice. Union Labs uses a similar pattern for `gitRev`. See [crane.dev/examples](https://crane.dev/examples/cross-musl.html) and [Union Labs crane.nix](https://github.com/unionlabs/union/blob/main/tools/rust/crane.nix).
+
+### 19b. Local→CI cache reuse requires same Nix system
+
+Mac (aarch64-darwin) and CI Linux (x86_64-linux) produce different derivation hashes — even for the same source code. Nix hashes ALL inputs including build tools (`pkgs.zig` on Mac ≠ `pkgs.zig` on Linux). Cross-compiling via zig-cc produces a valid x86_64 binary but a DIFFERENT derivation hash from CI's native build.
+
+**Fix:** add a macOS CI runner (`macos-latest` = Apple Silicon = same `aarch64-darwin` as your laptop). Local `cachix push` feeds it directly → full cache hit. The Linux CI runner builds natively for x86_64 (cached from previous CI runs).
+
 ## AWS / Bootstrap
 
 ### 19. S3 state bucket name includes account ID

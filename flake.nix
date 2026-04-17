@@ -48,7 +48,6 @@
         commonArgs = {
           src = appSrc;
           strictDeps = true;
-          # Inject git commit at build time so /version reports it.
           GIT_COMMIT = self.shortRev or self.dirtyShortRev or "unknown";
         };
 

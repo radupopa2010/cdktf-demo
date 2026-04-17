@@ -76,20 +76,19 @@ What happens, narrated:
 ./scripts/dev-down.sh
 ```
 
-### Beat 2b — Cross-compile for CI's architecture + push to Cachix (~60 s)
+### Beat 2b — Push to Cachix (feeds the macOS CI runner) (~10 s)
 
 ```bash
-nix build .#rust-demo-linux-amd64 .#rust-demo-image-amd64 --print-out-paths \
-  | cachix push radupopa2010
+nix build .#rust-demo --print-out-paths | cachix push radupopa2010
 ```
 
 What happens, narrated:
 
-- `nix build .#rust-demo-linux-amd64` — cross-compiles a static `x86_64-linux-musl` ELF binary from your Mac using `zig cc` as the linker. No VM, no Docker, no remote builder.
-- `nix build .#rust-demo-image-amd64` — wraps that binary in an OCI image. Genuine `linux/amd64`, same arch as CI runners and EKS nodes.
-- `cachix push` — uploads both derivations to the shared cache. When CI runs `nix build .#rust-demo-image` next, it pulls from cache instead of recompiling. **This is local feeding CI.**
+- Pushes the `aarch64-darwin` binary (and all its deps) to the shared Cachix cache.
+- CI has a `validate-mac` job that runs on `macos-latest` (also Apple Silicon / aarch64-darwin). Same system = same derivation hashes = **full cache hit**.
+- The CI macOS runner will finish in seconds instead of minutes because everything was already built on your laptop.
 
-> "I just cross-compiled a Linux x86_64 binary on my Apple Silicon Mac and pushed it to Cachix. Watch the CI build — it'll download instead of compile. 91 cache hits on the last run."
+> "I just pushed my local build to Cachix. Watch the CI macOS job — it'll pull instead of compile. Same architecture, same Nix derivation, same hash. That's local feeding CI."
 
 ### Beat 3 — Push + cut the release (20 s)
 
@@ -108,15 +107,18 @@ gh run watch
 In the narrow terminal, `gh run watch` shows `app-release` light up:
 
 1. `resolve-tag` — extracts `v0.1.X` (~3 s)
-2. `build` — `nix build .#rust-demo-image` + `docker push` to ECR
+2. `validate-mac` — runs on `macos-latest` (Apple Silicon, same arch as your laptop)
+3. `build` — runs on `ubuntu-latest`, builds the native x86_64 OCI image + pushes to ECR
 
-Open the build job's log and grep mentally for:
+Open the **`validate-mac`** job's log. This is the cache-hit punchline:
 
 ```text
 copying path '/nix/store/...' from 'https://radupopa2010.cachix.org'
 ```
 
-> "Two punchlines on this screen. One: there are zero secrets in this repo's GitHub config — auth is OIDC, the Cachix token comes from AWS Secrets Manager. Two: every Rust dep is being pulled from cache, not recompiled. The build is the same Nix derivation we ran on my laptop 90 seconds ago."
+> "The macOS CI runner is pulling every single artifact from Cachix — because I just built and pushed the exact same derivation from my laptop 90 seconds ago. Same Apple Silicon arch, same Nix inputs, same hash. That's local feeding CI."
+
+**How to verify cache reuse:** compare the `validate-mac` job time (should be ~30s with cache) vs the `build` job time (~2 min, Linux cache from previous run). The Mac job is faster because YOUR local push fed it directly.
 
 ### Beat 5 — CI deploys (2–3 min)
 
