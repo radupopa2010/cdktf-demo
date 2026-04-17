@@ -172,6 +172,32 @@ nix config show | grep external-builders   # should show the JSON array
 
 Once enabled, `nix build .#packages.x86_64-linux.rust-demo-image` cross-builds the same image CI produces. Push it to Cachix and CI gets a direct cache hit.
 
+### Running `cdktf plan` locally
+
+Terraform 1.14+ can't resolve AWS SSO tokens the same way the AWS CLI does. Export explicit STS credentials before running cdktf:
+
+```bash
+# 1. Login (if session expired — SSO sessions last 8-12 hours)
+aws sso login --profile radupopa
+
+# 2. Export creds + state backend vars (the .envrc does this automatically with direnv)
+export CDKTF_STATE_BUCKET="cdktf-demo-tfstate-$(aws sts get-caller-identity --profile radupopa --query Account --output text)"
+export CDKTF_STATE_LOCK_TABLE="cdktf-demo-tfstate-lock"
+eval "$(aws configure export-credentials --profile radupopa --format env)"
+
+# 3. Plan any tier
+cd tier-01-cdktf-environments && npm install && npx cdktf get && npx cdktf plan devnet
+cd tier-02-cdktf-clusters      && npm install && npx cdktf get && npx cdktf plan devnet
+cd tier-03-cdktf-internal-tools && npm install && npx cdktf get && npx cdktf plan devnet
+cd tier-04-cdktf-applications   && npm install && npx cdktf get && npx cdktf plan devnet
+```
+
+If you use `direnv`, the `.envrc` at the repo root handles steps 2 automatically — just `direnv allow` once.
+
+### Alternative caching strategy (not used here)
+
+For maximum Nix cache efficiency, freeze `Cargo.toml` at `version = "0.1.0"` and inject the real version via `APP_VERSION` env var at build time. This keeps the deps derivation hash stable across releases — only the app binary recompiles (~4s instead of ~60s). Trade-off: requires `--impure` flag (breaks `nix flake check`) and is non-standard Cargo practice. See [Union Labs' crane.nix](https://github.com/unionlabs/union/blob/main/tools/rust/crane.nix) for a production example of this pattern.
+
 </details>
 
 <details>
